@@ -1,0 +1,160 @@
+version: '3.8'
+
+services:
+  auth-postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres-dev
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+      POSTGRES_DB: auth_db
+    volumes:
+      - auth_pgdata_dev:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - marketback
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth-redis:
+    image: redis:7-alpine
+    container_name: auth-redis-dev
+    volumes:
+      - auth_redis_dev:/data
+    ports:
+      - "6380:6379"
+    networks:
+      - marketback
+
+  auth-migrate:
+    image: migrate/migrate:v4.15.2
+    container_name: auth-migrate-dev
+    volumes:
+      - ../db/auth_migrations:/migrations
+    command: ["-path=/migrations", "-database=postgres://auth_user:auth_password@auth-postgres:5432/auth_db?sslmode=disable", "up"]
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    networks:
+      - marketback
+    restart: on-failure
+
+  auth-service:
+    build:
+      context: ../service/Auth
+      dockerfile: Dockerfile
+    container_name: auth-service-dev
+    environment:
+      DB_HOST: auth-postgres
+      DB_PORT: 5432
+      DB_USER: auth_user
+      DB_PASSWORD: auth_password
+      DB_NAME: auth_db
+      REDIS_ADDR: auth-redis:6379
+      JWT_ACCESS_SECRET: dev-super-secret-jwt-access-key-for-development-only
+      JWT_REFRESH_SECRET: dev-super-secret-jwt-refresh-key-for-development-only
+      JWT_ACCESS_EXPIRATION: 15m
+      JWT_REFRESH_EXPIRATION: 168h
+      JWT_ISSUER: marketback-auth
+      HTTP_HOST: :8081
+      LOG_LEVEL: debug
+      ENV: development
+    ports:
+      - "8081:8081"
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      auth-redis:
+        condition: service_started
+      auth-migrate:
+        condition: service_completed_successfully
+    networks:
+      - marketback
+    restart: on-failure
+
+  market-redis:
+    image: redis:7-alpine
+    container_name: market-redis-dev
+    volumes:
+      - market_redis_dev:/data
+    ports:
+      - "6381:6379"
+    networks:
+      - marketback
+
+  market-postgres:
+    image: postgres:16-alpine
+    container_name: market-postgres-dev
+    environment:
+      POSTGRES_USER: market_user
+      POSTGRES_PASSWORD: market_password
+      POSTGRES_DB: market_db
+    volumes:
+      - market_pgdata_dev:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - marketback
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U market_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  market-migrate:
+    image: migrate/migrate:v4.15.2
+    container_name: market-migrate-dev
+    volumes:
+      - ../db/market_migrations:/migrations
+    command: ["-path=/migrations", "-database=postgres://market_user:market_password@market-postgres:5432/market_db?sslmode=disable", "up"]
+    depends_on:
+      market-postgres:
+        condition: service_healthy
+    networks:
+      - marketback
+    restart: on-failure
+
+  market-service:
+    build:
+      context: ../service/Market
+      dockerfile: Dockerfile
+    container_name: market-service-dev
+    environment:
+      DB_HOST: market-postgres
+      DB_PORT: 5432
+      DB_USER: market_user
+      DB_PASSWORD: market_password
+      DB_NAME: market_db
+      JWT_ACCESS_SECRET: dev-super-secret-jwt-access-key-for-development-only
+      REDIS_ADDR: market-redis:6379
+      HTTP_HOST: :8080
+      LOG_LEVEL: debug
+      ENV: development
+    ports:
+      - "8080:8080"
+    depends_on:
+      market-postgres:
+        condition: service_healthy
+      market-redis:
+        condition: service_started
+      market-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+    networks:
+      - marketback
+    restart: on-failure
+
+networks:
+  marketback:
+    driver: bridge
+
+volumes:
+  auth_pgdata_dev:
+  auth_redis_dev:
+  market_pgdata_dev:
+  market_redis_dev:

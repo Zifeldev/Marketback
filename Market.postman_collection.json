@@ -1,0 +1,281 @@
+{
+  "info": {
+    "name": "Market Service API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Collection for testing Market API: public endpoints, cart, orders, seller/admin flows."
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:8080/health"
+      }
+    },
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Get Products",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8080/api/products?page=1&limit=10",
+              "host": ["http://localhost"],
+              "port": "8080",
+              "path": ["api", "products"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Product by ID",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:8080/api/products/1"
+          }
+        },
+        {
+          "name": "Get Categories",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:8080/api/categories"
+          }
+        },
+        {
+          "name": "Get Category by ID",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:8080/api/categories/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cart (auth required)",
+      "item": [
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": "http://localhost:8080/api/cart"
+          }
+        },
+        {
+          "name": "Add To Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": 1,\n  \"size\": \"M\",\n  \"color\": \"black\",\n  \"quantity\": 1\n}"
+            },
+            "url": "http://localhost:8080/api/cart/items"
+          }
+        },
+        {
+          "name": "Update Cart Item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}"
+            },
+            "url": "http://localhost:8080/api/cart/items/1"
+          }
+        },
+        {
+          "name": "Delete Cart Item",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": "http://localhost:8080/api/cart/items/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Market API (Dev)",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Register (seller)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                  "raw": "{{auth_base}}/auth/register",
+                  "host": ["{{auth_base}}"],
+                  "path": ["auth", "register"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{seller_email}}\",\n  \"password\": \"{{seller_password}}\",\n  \"role\": \"seller\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                  "raw": "{{auth_base}}/auth/login",
+                  "host": ["{{auth_base}}"],
+                  "path": ["auth", "login"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{seller_email}}\",\n  \"password\": \"{{seller_password}}\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Market - Public",
+          "item": [
+            {
+              "name": "Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{market_base}}/health",
+                  "host": ["{{market_base}}"],
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Products",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{market_base}}/api/products",
+                  "host": ["{{market_base}}"],
+                  "path": ["api", "products"]
+                }
+              }
+            },
+            {
+              "name": "Categories",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{market_base}}/api/categories",
+                  "host": ["{{market_base}}"],
+                  "path": ["api", "categories"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Market - Seller",
+          "item": [
+            {
+              "name": "Register Seller",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                  "raw": "{{market_base}}/api/seller/register",
+                  "host": ["{{market_base}}"],
+                  "path": ["api", "seller", "register"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"shop_name\": \"{{shop_name}}\",\n  \"description\": \"{{shop_desc}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Seller Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                  "raw": "{{market_base}}/api/seller/profile",
+                  "host": ["{{market_base}}"],
+                  "path": ["api", "seller", "profile"]
+                }
+              }
+            },
+            {
+              "name": "Create Product",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                  "raw": "{{market_base}}/api/seller/products",
+                  "host": ["{{market_base}}"],
+                  "path": ["api", "seller", "products"]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"{{product_title}}\",\n  \"price\": {{product_price}},\n  \"stock\": {{product_stock}},\n  \"sizes\": [\"M\"],\n  \"category_id\": {{product_category_id}}\n}"
+                }
+              }
+            },
+            {
+              "name": "List Seller Products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                  "raw": "{{market_base}}/api/seller/products",
+                  "host": ["{{market_base}}"],
+                  "path": ["api", "seller", "products"]
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "variable": [
+        { "key": "auth_base", "value": "http://localhost:8081" },
+        { "key": "market_base", "value": "http://localhost:8080" },
+        { "key": "seller_email", "value": "seller.postman@example.com" },
+        { "key": "seller_password", "value": "password123" },
+        { "key": "shop_name", "value": "Auto Shop" },
+        { "key": "shop_desc", "value": "test" },
+        { "key": "product_title", "value": "Demo Product" },
+        { "key": "product_price", "value": "9.99" },
+        { "key": "product_stock", "value": "5" },
+        { "key": "product_category_id", "value": "1" },
+        { "key": "access_token", "value": "" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+# Environment variables (contain secrets!)
+.env
+.env.*
+!.env.example
+# Allow development and example env files
+!.env.dev
+!.env.*.example
+!deployments/.env.dev
+
+# Secrets
+secrets/
+*.pem
+*.key
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+# Build
+dist/
+build/
+bin/
+
+# Compiled binaries
+service/Auth/main
+service/EmailParse/main
+main
+auth-service
+email-service

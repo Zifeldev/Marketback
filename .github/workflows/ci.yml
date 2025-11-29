@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59.1
+          args: --timeout=5m
+
+  unit-tests:
+    name: Unit tests (Auth + Market)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Auth service tests
+        working-directory: service/Auth
+        run: go test ./... -count=1 -coverprofile=auth.cover.out -covermode=atomic
+
+      - name: Market service tests
+        working-directory: service/Market
+        run: go test ./... -count=1 -coverprofile=market.cover.out -covermode=atomic
+
+      - name: Merge coverage
+        run: |
+          echo 'mode: atomic' > coverage.out
+          tail -n +2 auth.cover.out >> coverage.out || true
+          tail -n +2 market.cover.out >> coverage.out || true
+          go tool cover -func=coverage.out | tail -n1
+
+      - name: Enforce minimum coverage
+        env:
+          COVERAGE_THRESHOLD: "50"
+        run: |
+          TOTAL=$(go tool cover -func=coverage.out | tail -n1 | awk '{print substr($3, 1, length($3)-1)}')
+          echo "Total coverage: ${TOTAL}%"
+          awk -v t="$COVERAGE_THRESHOLD" -v c="$TOTAL" 'BEGIN{ if (c+0 < t+0) { printf("Coverage %.2f%% is below threshold %.2f%%\n", c, t); exit 1 } else { printf("Coverage %.2f%% meets threshold %.2f%%\n", c, t); exit 0 } }'
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  smoke-test:
+    name: Smoke test (docker-compose)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build & start stack
+        run: |
+          docker compose -f deployments/docker-compose.dev.yml up -d --build auth-service market-service
+          echo "Waiting for health endpoints..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8081/health >/dev/null && curl -sf http://localhost:8080/health >/dev/null; then
+              echo "Services healthy"; break; fi
+            sleep 2
+          done
+          curl -sf http://localhost:8081/health || (echo "Auth health check failed" && exit 1)
+          curl -sf http://localhost:8080/health || (echo "Market health check failed" && exit 1)
+
+      - name: Run smoke test script
+        run: bash deployments/smoke_test.sh
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -f deployments/docker-compose.dev.yml ps
+          docker compose -f deployments/docker-compose.dev.yml logs auth-service market-service | tail -n 400
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deployments/docker-compose.dev.yml down -v
