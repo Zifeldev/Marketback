@@ -5,6 +5,7 @@ A Go-based microservices backend consisting of two services:
 Микросервисный бэкенд для маркетплейса на Go.
 
 cd deployments
+cd /Users/azatburanbaev/Desktop/marketbackf/frontend && python3 -m http.server 3000 для запуска front 
 
 ## Архитектураcd ../service/Auth
 

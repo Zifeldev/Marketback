@@ -25,6 +25,15 @@ func NewCategoryRepository(db *pgxpool.Pool, cache *cache.RedisCache) *CategoryR
 	}
 }
 
+// invalidateCategoriesCache removes the cached categories list
+func (r *CategoryRepository) invalidateCategoriesCache(ctx context.Context) {
+	if r.cache != nil {
+		if err := r.cache.Delete(ctx, "categories:all"); err != nil {
+			logger.GetLogger().WithField("err", err).Warn("failed to invalidate categories cache")
+		}
+	}
+}
+
 func (r *CategoryRepository) Create(ctx context.Context, req *models.CreateCategoryRequest) (*models.Category, error) {
 	query, args, err := psql.Insert("categories").
 		Columns("name", "description").
@@ -49,6 +58,9 @@ func (r *CategoryRepository) Create(ctx context.Context, req *models.CreateCateg
 		logger.GetLogger().WithField("err", err).Error("failed to create category")
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
+
+	// Invalidate cache after creating a new category
+	r.invalidateCategoriesCache(ctx)
 
 	return &category, nil
 }
@@ -164,6 +176,9 @@ func (r *CategoryRepository) Update(ctx context.Context, id int, req *models.Upd
 		return nil, fmt.Errorf("failed to update category: %w", err)
 	}
 
+	// Invalidate cache after updating a category
+	r.invalidateCategoriesCache(ctx)
+
 	return &category, nil
 }
 
@@ -186,6 +201,9 @@ func (r *CategoryRepository) Delete(ctx context.Context, id int) error {
 		logger.GetLogger().WithField("category_id", id).Error("category not found")
 		return fmt.Errorf("category not found")
 	}
+
+	// Invalidate cache after deleting a category
+	r.invalidateCategoriesCache(ctx)
 
 	return nil
 }
