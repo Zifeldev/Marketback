@@ -18,10 +18,29 @@ import (
 	"github.com/Zifeldev/marketback/service/Market/internal/repository"
 	"github.com/Zifeldev/marketback/service/Market/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	ginprometheus "github.com/zsais/go-gin-prometheus"
+
+	_ "github.com/Zifeldev/marketback/service/Market/docs"
 )
 
+// Version is set at build time
+var Version = "1.0.0"
+
+// @title Market Service API
+// @version 1.0
+// @description Marketplace API with products, categories, cart, orders, seller and admin management
+// @host localhost:8080
+// @BasePath /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
+	startTime := time.Now()
+
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -42,13 +61,29 @@ func main() {
 	log.Info("Database connection established")
 
 	// Initialize Redis cache
-	redisCache, err := cache.NewRedisCache(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	if err != nil {
-		log.Warnf("Failed to connect to Redis: %v (continuing without cache)", err)
-		redisCache = nil
+	var redisCache *cache.RedisCache
+	var redisClient *redis.Client
+	if cfg.Redis.Enabled {
+		redisCache, err = cache.NewRedisCache(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+		if err != nil {
+			log.Warnf("Redis connection failed: %v", err)
+			log.Warn("Service will continue without Redis features:")
+			log.Warn("  - Rate limiting: DISABLED")
+			log.Warn("  - Category caching: DISABLED")
+			redisCache = nil
+		} else {
+			defer redisCache.Close()
+			redisClient = redisCache.GetClient()
+			log.Info("Redis connection established")
+			if cfg.RateLimit.Enabled {
+				log.Infof("  - Rate limiting: ENABLED (%d req/%s)", cfg.RateLimit.Max, cfg.RateLimit.Interval)
+			}
+			log.Info("  - Category caching: ENABLED")
+		}
 	} else {
-		defer redisCache.Close()
-		log.Info("Redis connection established")
+		log.Info("Redis is disabled by configuration (REDIS_ENABLED=false)")
+		log.Info("  - Rate limiting: DISABLED")
+		log.Info("  - Category caching: DISABLED")
 	}
 
 	// Initialize repositories
@@ -63,6 +98,16 @@ func main() {
 		orderRepo,
 		cartRepo,
 	)
+
+	// Upload directory setup
+	uploadDir := cfg.UploadDir
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
 
 	// Initialize controllers
 	marketController := controllers.NewMarketController(
@@ -82,7 +127,8 @@ func main() {
 		sellerRepo,
 		orderRepo,
 	)
-	healthController := controllers.NewHealthController()
+	healthController := controllers.NewHealthController(pool, redisClient, startTime, Version)
+	uploadController := controllers.NewUploadController(uploadDir, baseURL)
 
 	// Setup Gin router
 	if cfg.Strict {
@@ -90,20 +136,26 @@ func main() {
 	}
 	router := gin.Default()
 
-	// Prometheus metrics middleware 
+	// Prometheus metrics middleware
 	p := ginprometheus.NewPrometheus("market")
 	p.Use(router)
 
 	// Middleware
 	router.Use(middleware.CORS())
 
-	// Rate limiting: 100 requests per minute
-	if redisCache != nil {
-		router.Use(middleware.RateLimiter(redisCache, 100, time.Minute))
+	// Rate limiting
+	if redisCache != nil && cfg.RateLimit.Enabled {
+		router.Use(middleware.RateLimiter(redisCache, cfg.RateLimit.Max, cfg.RateLimit.Interval))
 	}
 
 	// Health check
 	router.GET("/health", healthController.Health)
+
+	// Swagger documentation
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Static files for uploaded images
+	router.Static("/uploads", uploadDir)
 
 	// API routes
 	api := router.Group("/api/")
@@ -118,6 +170,14 @@ func main() {
 			// Categories
 			public.GET("/categories", marketController.GetCategories)
 			public.GET("/categories/:id", marketController.GetCategory)
+		}
+
+		// Upload routes - authentication required
+		upload := api.Group("/upload")
+		upload.Use(middleware.JWTAuth(cfg.JWT.AccessSecret))
+		{
+			upload.POST("/image", uploadController.UploadImage)
+			upload.DELETE("/image/:filename", uploadController.DeleteImage)
 		}
 
 		// Cart routes - authentication required

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/Zifeldev/marketback/service/Market/internal/cache"
+	"github.com/Zifeldev/marketback/service/Market/internal/logger"
 	"github.com/Zifeldev/marketback/service/Market/internal/metrics"
 	"github.com/Zifeldev/marketback/service/Market/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,14 +26,18 @@ func NewCategoryRepository(db *pgxpool.Pool, cache *cache.RedisCache) *CategoryR
 }
 
 func (r *CategoryRepository) Create(ctx context.Context, req *models.CreateCategoryRequest) (*models.Category, error) {
-	query := `
-		INSERT INTO categories (name, description)
-		VALUES ($1, $2)
-		RETURNING id, name, description, created_at, updated_at
-	`
+	query, args, err := psql.Insert("categories").
+		Columns("name", "description").
+		Values(req.Name, req.Description).
+		Suffix("RETURNING id, name, description, created_at, updated_at").
+		ToSql()
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build insert category query")
+		return nil, fmt.Errorf("failed to build insert category query: %w", err)
+	}
 
 	var category models.Category
-	err := r.db.QueryRow(ctx, query, req.Name, req.Description).Scan(
+	err = r.db.QueryRow(ctx, query, args...).Scan(
 		&category.ID,
 		&category.Name,
 		&category.Description,
@@ -40,6 +46,7 @@ func (r *CategoryRepository) Create(ctx context.Context, req *models.CreateCateg
 	)
 
 	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to create category")
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
 
@@ -47,14 +54,17 @@ func (r *CategoryRepository) Create(ctx context.Context, req *models.CreateCateg
 }
 
 func (r *CategoryRepository) GetByID(ctx context.Context, id int) (*models.Category, error) {
-	query := `
-		SELECT id, name, description, created_at, updated_at
-		FROM categories
-		WHERE id = $1
-	`
+	query, args, err := psql.Select("id", "name", "description", "created_at", "updated_at").
+		From("categories").
+		Where(sq.Eq{"id": id}).
+		ToSql()
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build select category query")
+		return nil, fmt.Errorf("failed to build select category query: %w", err)
+	}
 
 	var category models.Category
-	err := r.db.QueryRow(ctx, query, id).Scan(
+	err = r.db.QueryRow(ctx, query, args...).Scan(
 		&category.ID,
 		&category.Name,
 		&category.Description,
@@ -63,6 +73,7 @@ func (r *CategoryRepository) GetByID(ctx context.Context, id int) (*models.Categ
 	)
 
 	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to get category")
 		return nil, fmt.Errorf("failed to get category: %w", err)
 	}
 
@@ -81,14 +92,18 @@ func (r *CategoryRepository) GetAll(ctx context.Context) ([]*models.Category, er
 		metrics.RedisMissesTotal.Inc()
 	}
 
-	query := `
-		SELECT id, name, description, created_at, updated_at
-		FROM categories
-		ORDER BY name
-	`
-
-	rows, err := r.db.Query(ctx, query)
+	query, args, err := psql.Select("id", "name", "description", "created_at", "updated_at").
+		From("categories").
+		OrderBy("name").
+		ToSql()
 	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build select all categories query")
+		return nil, fmt.Errorf("failed to build select all categories query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to get categories")
 		return nil, fmt.Errorf("failed to get categories: %w", err)
 	}
 	defer rows.Close()
@@ -103,6 +118,7 @@ func (r *CategoryRepository) GetAll(ctx context.Context) ([]*models.Category, er
 			&category.CreatedAt,
 			&category.UpdatedAt,
 		); err != nil {
+			logger.GetLogger().WithField("err", err).Error("failed to scan category")
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
 		categories = append(categories, &category)
@@ -116,17 +132,26 @@ func (r *CategoryRepository) GetAll(ctx context.Context) ([]*models.Category, er
 }
 
 func (r *CategoryRepository) Update(ctx context.Context, id int, req *models.UpdateCategoryRequest) (*models.Category, error) {
-	query := `
-		UPDATE categories
-		SET name = COALESCE(NULLIF($1, ''), name),
-		    description = COALESCE(NULLIF($2, ''), description),
-		    updated_at = NOW()
-		WHERE id = $3
-		RETURNING id, name, description, created_at, updated_at
-	`
+	updateBuilder := psql.Update("categories").
+		Set("updated_at", sq.Expr("NOW()")).
+		Where(sq.Eq{"id": id}).
+		Suffix("RETURNING id, name, description, created_at, updated_at")
+
+	if req.Name != "" {
+		updateBuilder = updateBuilder.Set("name", req.Name)
+	}
+	if req.Description != "" {
+		updateBuilder = updateBuilder.Set("description", req.Description)
+	}
+
+	query, args, err := updateBuilder.ToSql()
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build update category query")
+		return nil, fmt.Errorf("failed to build update category query: %w", err)
+	}
 
 	var category models.Category
-	err := r.db.QueryRow(ctx, query, req.Name, req.Description, id).Scan(
+	err = r.db.QueryRow(ctx, query, args...).Scan(
 		&category.ID,
 		&category.Name,
 		&category.Description,
@@ -135,6 +160,7 @@ func (r *CategoryRepository) Update(ctx context.Context, id int, req *models.Upd
 	)
 
 	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to update category")
 		return nil, fmt.Errorf("failed to update category: %w", err)
 	}
 
@@ -142,14 +168,22 @@ func (r *CategoryRepository) Update(ctx context.Context, id int, req *models.Upd
 }
 
 func (r *CategoryRepository) Delete(ctx context.Context, id int) error {
-	query := `DELETE FROM categories WHERE id = $1`
-
-	result, err := r.db.Exec(ctx, query, id)
+	query, args, err := psql.Delete("categories").
+		Where(sq.Eq{"id": id}).
+		ToSql()
 	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build delete category query")
+		return fmt.Errorf("failed to build delete category query: %w", err)
+	}
+
+	result, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to delete category")
 		return fmt.Errorf("failed to delete category: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
+		logger.GetLogger().WithField("category_id", id).Error("category not found")
 		return fmt.Errorf("category not found")
 	}
 

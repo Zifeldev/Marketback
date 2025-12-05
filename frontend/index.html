@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Маркетплейс</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-500: #6b7280;
+            --gray-700: #374151;
+            --gray-900: #111827;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--gray-100); color: var(--gray-900); line-height: 1.6; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+        
+        /* Header */
+        .header { background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 100; }
+        .header .container { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; flex-wrap: wrap; gap: 15px; }
+        .logo { font-size: 1.5rem; font-weight: bold; color: var(--primary); text-decoration: none; cursor: pointer; }
+        .nav { display: flex; gap: 20px; }
+        .nav a { color: var(--gray-700); text-decoration: none; cursor: pointer; }
+        .nav a:hover { color: var(--primary); }
+        .badge { background: var(--primary); color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; margin-left: 5px; }
+        .auth-buttons, .user-menu { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        #user-name { font-weight: 500; color: var(--primary); }
+        
+        /* Buttons */
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-outline { background: transparent; border: 1px solid var(--gray-300); color: var(--gray-700); }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-small { padding: 6px 12px; font-size: 0.8rem; }
+        .btn-block { width: 100%; }
+        
+        /* Main */
+        .main { min-height: calc(100vh - 70px); padding: 30px 0; }
+        .page { display: none; animation: fadeIn 0.3s ease; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Categories */
+        .categories { display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap; }
+        .category-btn { padding: 8px 16px; border: 1px solid var(--gray-300); border-radius: 20px; background: white; cursor: pointer; }
+        .category-btn:hover, .category-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        
+        /* Products Grid */
+        .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .product-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .product-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        .product-image { width: 100%; height: 200px; object-fit: cover; background: linear-gradient(135deg, var(--gray-200), var(--gray-300)); display: flex; align-items: center; justify-content: center; font-size: 4rem; }
+        .product-info { padding: 15px; }
+        .product-name { font-size: 1.1rem; font-weight: 600; margin-bottom: 5px; }
+        .product-price { font-size: 1.25rem; font-weight: bold; color: var(--primary); margin-bottom: 10px; }
+        .product-stock { font-size: 0.85rem; color: var(--gray-500); margin-bottom: 10px; }
+        .product-stock.out { color: var(--danger); }
+        
+        /* Auth Forms */
+        .auth-form { max-width: 400px; margin: 50px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .auth-form h2 { text-align: center; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; border: 1px solid var(--gray-300); border-radius: 8px; font-size: 1rem; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); }
+        .auth-link { text-align: center; margin-top: 20px; color: var(--gray-500); }
+        .auth-link a { color: var(--primary); cursor: pointer; }
+        
+        /* Cart */
+        .cart-item { display: flex; align-items: center; gap: 20px; background: white; padding: 20px; border-radius: 12px; margin-bottom: 15px; }
+        .cart-item-image { width: 80px; height: 80px; background: var(--gray-200); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+        .cart-item-info { flex: 1; }
+        .cart-item-name { font-weight: 600; }
+        .cart-item-price { color: var(--primary); font-weight: bold; }
+        .cart-item-quantity { display: flex; align-items: center; gap: 10px; }
+        .quantity-btn { width: 32px; height: 32px; border: 1px solid var(--gray-300); border-radius: 6px; background: white; cursor: pointer; font-size: 1.2rem; }
+        .cart-total { display: flex; justify-content: space-between; font-size: 1.5rem; font-weight: bold; margin: 30px 0; padding: 20px; background: white; border-radius: 12px; }
+        .cart-actions { display: flex; gap: 15px; flex-wrap: wrap; }
+        #checkout-form { background: white; padding: 30px; border-radius: 12px; margin-top: 20px; }
+        
+        /* Orders */
+        .order-card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
+        .order-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--gray-200); flex-wrap: wrap; gap: 10px; }
+        .order-status { padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500; }
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-confirmed { background: #dbeafe; color: #1e40af; }
+        .status-processing { background: #e0e7ff; color: #3730a3; }
+        .status-shipped { background: #d1fae5; color: #065f46; }
+        .status-delivered { background: #dcfce7; color: #166534; }
+        .status-cancelled { background: #fee2e2; color: #991b1b; }
+        .order-total { text-align: right; font-weight: bold; font-size: 1.1rem; margin-top: 15px; }
+        
+        /* Admin */
+        .admin-tabs { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid var(--gray-200); padding-bottom: 10px; flex-wrap: wrap; }
+        .tab-btn { padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 1rem; color: var(--gray-500); border-bottom: 2px solid transparent; margin-bottom: -12px; }
+        .tab-btn:hover, .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+        .admin-tab { background: white; padding: 30px; border-radius: 12px; display: none; }
+        .admin-tab.active { display: block; }
+        .inline-form { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .inline-form input { flex: 1; min-width: 200px; padding: 10px; border: 1px solid var(--gray-300); border-radius: 8px; }
+        .admin-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid var(--gray-200); flex-wrap: wrap; gap: 10px; }
+        .admin-item-actions { display: flex; gap: 10px; }
+        
+        /* Seller */
+        #add-product-form { background: var(--gray-100); padding: 20px; border-radius: 12px; margin: 20px 0; }
+        .seller-product { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        
+        /* Toast */
+        .toast { position: fixed; bottom: 20px; right: 20px; padding: 15px 25px; border-radius: 8px; color: white; font-weight: 500; transform: translateY(100px); opacity: 0; transition: all 0.3s; z-index: 1000; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        
+        /* Empty & Loading */
+        .empty-state, .loading { text-align: center; padding: 50px; color: var(--gray-500); }
+        
+        @media (max-width: 768px) {
+            .products-grid { grid-template-columns: 1fr; }
+            .cart-item { flex-direction: column; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <span class="logo" onclick="showPage('home')">🛒 Маркетплейс</span>
+            <nav class="nav">
+                <a onclick="showPage('home')">Каталог</a>
+                <a onclick="showPage('cart')">Корзина <span id="cart-count" class="badge">0</span></a>
+            </nav>
+            <div class="auth-buttons" id="auth-buttons">
+                <button onclick="showPage('login')" class="btn btn-outline">Войти</button>
+                <button onclick="showPage('register')" class="btn btn-primary">Регистрация</button>
+            </div>
+            <div class="user-menu" id="user-menu" style="display: none;">
+                <span id="user-name"></span>
+                <button onclick="showPage('orders')" class="btn btn-outline btn-small">Заказы</button>
+                <button onclick="showPage('seller')" class="btn btn-outline btn-small" id="seller-btn" style="display: none;">Продавец</button>
+                <button onclick="showPage('admin')" class="btn btn-outline btn-small" id="admin-btn" style="display: none;">Админ</button>
+                <button onclick="logout()" class="btn btn-danger btn-small">Выйти</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Home Page -->
+        <div id="page-home" class="page active">
+            <div class="container">
+                <h1 style="margin-bottom: 20px;">Каталог товаров</h1>
+                <div class="categories" id="categories"></div>
+                <div class="products-grid" id="products-grid">
+                    <div class="loading">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Page -->
+        <div id="page-login" class="page">
+            <div class="container">
+                <div class="auth-form">
+                    <h2>Вход</h2>
+                    <form onsubmit="login(event)">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="login-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Пароль</label>
+                            <input type="password" id="login-password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Войти</button>
+                    </form>
+                    <p class="auth-link">Нет аккаунта? <a onclick="showPage('register')">Зарегистрироваться</a></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Register Page -->
+        <div id="page-register" class="page">
+            <div class="container">
+                <div class="auth-form">
+                    <h2>Регистрация</h2>
+                    <form onsubmit="register(event)">
+                        <div class="form-group">
+                            <label>Имя</label>
+                            <input type="text" id="register-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="register-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Пароль (мин. 8 символов)</label>
+                            <input type="password" id="register-password" minlength="8" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Роль</label>
+                            <select id="register-role" onchange="toggleShopNameField()">
+                                <option value="user">Покупатель</option>
+                                <option value="seller">Продавец</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="shop-name-group" style="display: none;">
+                            <label>Название магазина</label>
+                            <input type="text" id="register-shop-name" placeholder="Введите название вашего магазина">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Зарегистрироваться</button>
+                    </form>
+                    <p class="auth-link">Уже есть аккаунт? <a onclick="showPage('login')">Войти</a></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cart Page -->
+        <div id="page-cart" class="page">
+            <div class="container">
+                <h1 style="margin-bottom: 20px;">Корзина</h1>
+                <div id="cart-items"></div>
+                <div id="cart-summary" style="display: none;">
+                    <div class="cart-total">
+                        <span>Итого:</span>
+                        <span id="cart-total-price">0 ₽</span>
+                    </div>
+                    <div class="cart-actions">
+                        <button onclick="clearCart()" class="btn btn-outline">Очистить корзину</button>
+                        <button onclick="toggleCheckout()" class="btn btn-primary">Оформить заказ</button>
+                    </div>
+                </div>
+                <div id="checkout-form" style="display: none;">
+                    <h2>Оформление заказа</h2>
+                    <form onsubmit="createOrder(event)">
+                        <div class="form-group">
+                            <label>Адрес доставки</label>
+                            <textarea id="delivery-address" rows="3" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Способ оплаты</label>
+                            <select id="payment-method">
+                                <option value="card">Банковская карта</option>
+                                <option value="cash">Наличные при получении</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Подтвердить заказ</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders Page -->
+        <div id="page-orders" class="page">
+            <div class="container">
+                <h1 style="margin-bottom: 20px;">Мои заказы</h1>
+                <div id="orders-list"></div>
+            </div>
+        </div>
+
+        <!-- Admin Page -->
+        <div id="page-admin" class="page">
+            <div class="container">
+                <h1 style="margin-bottom: 20px;">Админ панель</h1>
+                <div class="admin-tabs">
+                    <button class="tab-btn active" onclick="showAdminTab('categories')">Категории</button>
+                    <button class="tab-btn" onclick="showAdminTab('sellers')">Продавцы</button>
+                    <button class="tab-btn" onclick="showAdminTab('products')">Товары</button>
+                    <button class="tab-btn" onclick="showAdminTab('all-orders')">Заказы</button>
+                </div>
+                
+                <div id="tab-categories" class="admin-tab active">
+                    <form onsubmit="createCategory(event)" class="inline-form">
+                        <input type="text" id="new-category-name" placeholder="Название категории" required>
+                        <input type="text" id="new-category-desc" placeholder="Описание">
+                        <button type="submit" class="btn btn-primary">Добавить</button>
+                    </form>
+                    <div id="admin-categories-list"></div>
+                </div>
+                
+                <div id="tab-sellers" class="admin-tab">
+                    <div id="admin-sellers-list"></div>
+                </div>
+                
+                <div id="tab-products" class="admin-tab">
+                    <div id="admin-products-list"></div>
+                </div>
+                
+                <div id="tab-all-orders" class="admin-tab">
+                    <div id="admin-orders-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seller Page -->
+        <div id="page-seller" class="page">
+            <div class="container">
+                <h1 style="margin-bottom: 20px;">Панель продавца</h1>
+                
+                <div id="seller-register">
+                    <div class="auth-form">
+                        <h2>Регистрация магазина</h2>
+                        <form onsubmit="registerSeller(event)">
+                            <div class="form-group">
+                                <label>Название магазина</label>
+                                <input type="text" id="shop-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Описание</label>
+                                <textarea id="shop-description" rows="3"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">Создать магазин</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div id="seller-dashboard" style="display: none;">
+                    <button onclick="toggleProductForm()" class="btn btn-primary">+ Добавить товар</button>
+                    
+                    <div id="add-product-form" style="display: none;">
+                        <h3>Новый товар</h3>
+                        <form onsubmit="createProduct(event)">
+                            <div class="form-group">
+                                <label>Название</label>
+                                <input type="text" id="product-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Описание</label>
+                                <textarea id="product-description" rows="3"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Цена (₽)</label>
+                                <input type="number" id="product-price" min="0" step="0.01" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Количество</label>
+                                <input type="number" id="product-stock" min="0" value="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Категория</label>
+                                <select id="product-category" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Изображение товара</label>
+                                <input type="file" id="product-image" accept="image/*" onchange="previewImage(event)">
+                                <img id="image-preview" style="max-width: 200px; margin-top: 10px; display: none; border-radius: 8px;">
+                                <input type="hidden" id="product-image-url">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Создать</button>
+                            <button type="button" onclick="toggleProductForm()" class="btn btn-outline">Отмена</button>
+                        </form>
+                    </div>
+                    
+                    <div id="seller-products-list" style="margin-top: 20px;"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // Config
+        const API_AUTH = 'http://localhost:8081';
+        const API_MARKET = 'http://localhost:8080';
+        
+        // State
+        let currentUser = null;
+        let cart = [];
+        let categories = [];
+        let currentCategory = null;
+        
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+            loadCategories();
+            loadProducts();
+        });
+        
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+        
+        // Pages
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(`page-${page}`).classList.add('active');
+            
+            if (page === 'cart') loadCart();
+            if (page === 'orders') loadOrders();
+            if (page === 'admin') loadAdminData();
+            if (page === 'seller') loadSellerData();
+        }
+        
+        // Auth
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            if (token) {
+                try {
+                    const payload = JSON.parse(atob(token.split('.')[1]));
+                    if (payload.exp * 1000 > Date.now()) {
+                        currentUser = payload;
+                        updateAuthUI();
+                        return;
+                    }
+                } catch (e) {}
+            }
+            currentUser = null;
+            updateAuthUI();
+        }
+        
+        function updateAuthUI() {
+            const authButtons = document.getElementById('auth-buttons');
+            const userMenu = document.getElementById('user-menu');
+            const adminBtn = document.getElementById('admin-btn');
+            const sellerBtn = document.getElementById('seller-btn');
+            
+            if (currentUser) {
+                authButtons.style.display = 'none';
+                userMenu.style.display = 'flex';
+                document.getElementById('user-name').textContent = currentUser.email;
+                adminBtn.style.display = currentUser.role === 'admin' ? 'inline-block' : 'none';
+                sellerBtn.style.display = ['seller', 'admin'].includes(currentUser.role) ? 'inline-block' : 'none';
+            } else {
+                authButtons.style.display = 'flex';
+                userMenu.style.display = 'none';
+            }
+        }
+        
+        function getAuthHeader() {
+            const token = localStorage.getItem('token');
+            return token ? { Authorization: `Bearer ${token}` } : {};
+        }
+        
+        async function login(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            
+            try {
+                const res = await axios.post(`${API_AUTH}/auth/login`, { email, password });
+                localStorage.setItem('token', res.data.access_token);
+                document.cookie = `access_token=${res.data.access_token}; path=/`;
+                checkAuth();
+                showToast('Вход выполнен!');
+                showPage('home');
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка входа', 'error');
+            }
+        }
+        
+        async function register(e) {
+            e.preventDefault();
+            const name = document.getElementById('register-name').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+            const role = document.getElementById('register-role').value;
+            const shopName = document.getElementById('register-shop-name').value;
+            
+            // Проверка: для продавца обязательно название магазина
+            if (role === 'seller' && !shopName.trim()) {
+                showToast('Для продавца обязательно укажите название магазина', 'error');
+                return;
+            }
+            
+            try {
+                const data = { name, email, password, role };
+                if (role === 'seller') {
+                    data.shop_name = shopName;
+                }
+                const res = await axios.post(`${API_AUTH}/auth/register`, data);
+                localStorage.setItem('token', res.data.access_token);
+                document.cookie = `access_token=${res.data.access_token}; path=/`;
+                checkAuth();
+                showToast('Регистрация успешна!');
+                showPage('home');
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка регистрации', 'error');
+            }
+        }
+        
+        function toggleShopNameField() {
+            const role = document.getElementById('register-role').value;
+            const shopNameGroup = document.getElementById('shop-name-group');
+            const shopNameInput = document.getElementById('register-shop-name');
+            
+            if (role === 'seller') {
+                shopNameGroup.style.display = 'block';
+                shopNameInput.required = true;
+            } else {
+                shopNameGroup.style.display = 'none';
+                shopNameInput.required = false;
+                shopNameInput.value = '';
+            }
+        }
+        
+        function logout() {
+            localStorage.removeItem('token');
+            document.cookie = 'access_token=; path=/; max-age=0';
+            currentUser = null;
+            updateAuthUI();
+            showToast('Вы вышли из системы');
+            showPage('home');
+        }
+        
+        // Categories
+        async function loadCategories() {
+            try {
+                const res = await axios.get(`${API_MARKET}/api/categories`);
+                categories = res.data || [];
+                renderCategories();
+            } catch (err) {
+                console.error('Error loading categories:', err);
+            }
+        }
+        
+        function renderCategories() {
+            const container = document.getElementById('categories');
+            container.innerHTML = `
+                <button class="category-btn ${!currentCategory ? 'active' : ''}" onclick="filterByCategory(null)">Все</button>
+                ${categories.map(c => `
+                    <button class="category-btn ${currentCategory === c.id ? 'active' : ''}" onclick="filterByCategory(${c.id})">${c.name}</button>
+                `).join('')}
+            `;
+            
+            const select = document.getElementById('product-category');
+            if (select) {
+                select.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            }
+        }
+        
+        function filterByCategory(categoryId) {
+            currentCategory = categoryId;
+            renderCategories();
+            loadProducts();
+        }
+        
+        // Products
+        async function loadProducts() {
+            const container = document.getElementById('products-grid');
+            container.innerHTML = '<div class="loading">Загрузка...</div>';
+            
+            try {
+                const params = currentCategory ? `?category_id=${currentCategory}` : '';
+                const res = await axios.get(`${API_MARKET}/api/products${params}`);
+                const products = res.data?.data || res.data?.products || res.data || [];
+                
+                if (!Array.isArray(products) || products.length === 0) {
+                    container.innerHTML = '<div class="empty-state">Товары не найдены</div>';
+                    return;
+                }
+                
+                container.innerHTML = products.map(p => `
+                    <div class="product-card">
+                        <div class="product-image" style="background: ${p.image_url ? `url('${p.image_url}') center/cover` : 'var(--gray-100)'}; display: flex; align-items: center; justify-content: center;">
+                            ${!p.image_url ? '📦' : ''}
+                        </div>
+                        <div class="product-info">
+                            <div class="product-name">${p.title}</div>
+                            <div class="product-price">${Number(p.price).toLocaleString()} ₽</div>
+                            <div class="product-stock ${p.stock <= 0 ? 'out' : ''}">
+                                ${p.stock > 0 ? `В наличии: ${p.stock}` : 'Нет в наличии'}
+                            </div>
+                            <button class="btn btn-primary btn-small" onclick="addToCart(${p.id})" ${p.stock <= 0 ? 'disabled' : ''}>
+                                В корзину
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
+            }
+        }
+        
+        // Cart
+        async function loadCart() {
+            if (!currentUser) {
+                document.getElementById('cart-items').innerHTML = '<div class="empty-state">Войдите, чтобы увидеть корзину</div>';
+                document.getElementById('cart-summary').style.display = 'none';
+                return;
+            }
+            
+            try {
+                const res = await axios.get(`${API_MARKET}/api/cart`, { headers: getAuthHeader() });
+                cart = res.data || [];
+                renderCart();
+            } catch (err) {
+                document.getElementById('cart-items').innerHTML = '<div class="empty-state">Ошибка загрузки корзины</div>';
+            }
+        }
+        
+        function renderCart() {
+            const container = document.getElementById('cart-items');
+            const summary = document.getElementById('cart-summary');
+            
+            if (!cart || cart.length === 0) {
+                container.innerHTML = '<div class="empty-state">Корзина пуста</div>';
+                summary.style.display = 'none';
+                document.getElementById('cart-count').textContent = '0';
+                return;
+            }
+            
+            container.innerHTML = cart.map(item => `
+                <div class="cart-item">
+                    <div class="cart-item-image">📦</div>
+                    <div class="cart-item-info">
+                        <div class="cart-item-name">${item.product_title || 'Товар'}</div>
+                        <div class="cart-item-price">${Number(item.product_price || 0).toLocaleString()} ₽</div>
+                    </div>
+                    <div class="cart-item-quantity">
+                        <button class="quantity-btn" onclick="updateCartQuantity(${item.id}, ${item.quantity - 1})">−</button>
+                        <span>${item.quantity}</span>
+                        <button class="quantity-btn" onclick="updateCartQuantity(${item.id}, ${item.quantity + 1})">+</button>
+                    </div>
+                    <button class="btn btn-danger btn-small" onclick="removeFromCart(${item.id})">✕</button>
+                </div>
+            `).join('');
+            
+            const total = cart.reduce((sum, item) => sum + (item.product_price || 0) * item.quantity, 0);
+            document.getElementById('cart-total-price').textContent = `${total.toLocaleString()} ₽`;
+            document.getElementById('cart-count').textContent = cart.reduce((sum, item) => sum + item.quantity, 0);
+            summary.style.display = 'block';
+        }
+        
+        async function addToCart(productId) {
+            if (!currentUser) {
+                showToast('Войдите, чтобы добавить в корзину', 'error');
+                showPage('login');
+                return;
+            }
+            
+            try {
+                await axios.post(`${API_MARKET}/api/cart/items`, 
+                    { product_id: productId, quantity: 1 },
+                    { headers: getAuthHeader() }
+                );
+                showToast('Товар добавлен в корзину!');
+                loadCart();
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка', 'error');
+            }
+        }
+        
+        async function updateCartQuantity(itemId, quantity) {
+            if (quantity <= 0) {
+                removeFromCart(itemId);
+                return;
+            }
+            
+            try {
+                await axios.put(`${API_MARKET}/api/cart/items/${itemId}`,
+                    { quantity },
+                    { headers: getAuthHeader() }
+                );
+                loadCart();
+            } catch (err) {
+                showToast('Ошибка обновления', 'error');
+            }
+        }
+        
+        async function removeFromCart(itemId) {
+            try {
+                await axios.delete(`${API_MARKET}/api/cart/items/${itemId}`, { headers: getAuthHeader() });
+                loadCart();
+            } catch (err) {
+                showToast('Ошибка удаления', 'error');
+            }
+        }
+        
+        async function clearCart() {
+            for (const item of cart) {
+                await axios.delete(`${API_MARKET}/api/cart/items/${item.id}`, { headers: getAuthHeader() });
+            }
+            loadCart();
+            showToast('Корзина очищена');
+        }
+        
+        function toggleCheckout() {
+            const form = document.getElementById('checkout-form');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        async function createOrder(e) {
+            e.preventDefault();
+            const deliveryAddress = document.getElementById('delivery-address').value;
+            const paymentMethod = document.getElementById('payment-method').value;
+            
+            try {
+                await axios.post(`${API_MARKET}/api/user/orders`,
+                    { delivery_address: deliveryAddress, payment_method: paymentMethod },
+                    { headers: getAuthHeader() }
+                );
+                showToast('Заказ создан!');
+                document.getElementById('checkout-form').style.display = 'none';
+                loadCart();
+                showPage('orders');
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка создания заказа', 'error');
+            }
+        }
+        
+        // Orders
+        async function loadOrders() {
+            const container = document.getElementById('orders-list');
+            
+            if (!currentUser) {
+                container.innerHTML = '<div class="empty-state">Войдите, чтобы увидеть заказы</div>';
+                return;
+            }
+            
+            try {
+                const res = await axios.get(`${API_MARKET}/api/user/orders`, { headers: getAuthHeader() });
+                const orders = res.data || [];
+                
+                if (orders.length === 0) {
+                    container.innerHTML = '<div class="empty-state">Нет заказов</div>';
+                    return;
+                }
+                
+                container.innerHTML = orders.map(order => `
+                    <div class="order-card">
+                        <div class="order-header">
+                            <span><strong>Заказ #${order.id}</strong> от ${new Date(order.created_at).toLocaleDateString()}</span>
+                            <span class="order-status status-${order.status}">${getStatusText(order.status)}</span>
+                        </div>
+                        <div>Адрес: ${order.delivery_address}</div>
+                        <div>Оплата: ${order.payment_method}</div>
+                        <div class="order-total">Итого: ${Number(order.total_amount).toLocaleString()} ₽</div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = '<div class="empty-state">Ошибка загрузки заказов</div>';
+            }
+        }
+        
+        function getStatusText(status) {
+            const statuses = {
+                'pending': 'Ожидает',
+                'confirmed': 'Подтверждён',
+                'processing': 'В обработке',
+                'shipped': 'Отправлен',
+                'delivered': 'Доставлен',
+                'cancelled': 'Отменён'
+            };
+            return statuses[status] || status;
+        }
+        
+        // Admin
+        function showAdminTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+        }
+        
+        async function loadAdminData() {
+            loadAdminCategories();
+            loadAdminSellers();
+            loadAdminProducts();
+            loadAdminOrders();
+        }
+        
+        async function loadAdminCategories() {
+            const container = document.getElementById('admin-categories-list');
+            try {
+                const res = await axios.get(`${API_MARKET}/api/categories`);
+                const cats = res.data || [];
+                container.innerHTML = cats.map(c => `
+                    <div class="admin-item">
+                        <div>
+                            <strong>${c.name}</strong>
+                            <p style="color: var(--gray-500); font-size: 0.9rem;">${c.description || ''}</p>
+                        </div>
+                        <div class="admin-item-actions">
+                            <button class="btn btn-danger btn-small" onclick="deleteCategory(${c.id})">Удалить</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {}
+        }
+        
+        async function createCategory(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-category-name').value;
+            const description = document.getElementById('new-category-desc').value;
+            
+            try {
+                await axios.post(`${API_MARKET}/api/admin/categories`,
+                    { name, description },
+                    { headers: getAuthHeader() }
+                );
+                showToast('Категория создана!');
+                document.getElementById('new-category-name').value = '';
+                document.getElementById('new-category-desc').value = '';
+                loadCategories();
+                loadAdminCategories();
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка', 'error');
+            }
+        }
+        
+        async function deleteCategory(id) {
+            if (!confirm('Удалить категорию?')) return;
+            try {
+                await axios.delete(`${API_MARKET}/api/admin/categories/${id}`, { headers: getAuthHeader() });
+                showToast('Категория удалена');
+                loadCategories();
+                loadAdminCategories();
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка', 'error');
+            }
+        }
+        
+        async function loadAdminSellers() {
+            const container = document.getElementById('admin-sellers-list');
+            try {
+                const res = await axios.get(`${API_MARKET}/api/admin/sellers`, { headers: getAuthHeader() });
+                const sellers = res.data || [];
+                container.innerHTML = sellers.length ? sellers.map(s => `
+                    <div class="admin-item">
+                        <div>
+                            <strong>${s.shop_name}</strong>
+                            <p style="color: var(--gray-500);">Статус: ${s.is_active ? 'Активен' : 'Неактивен'}</p>
+                        </div>
+                        <div class="admin-item-actions">
+                            <button class="btn btn-success btn-small" onclick="updateSellerStatus(${s.id}, true)">Одобрить</button>
+                            <button class="btn btn-danger btn-small" onclick="updateSellerStatus(${s.id}, false)">Отклонить</button>
+                        </div>
+                    </div>
+                `).join('') : '<div class="empty-state">Нет продавцов</div>';
+            } catch (err) {
+                container.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
+            }
+        }
+        
+        async function updateSellerStatus(id, isActive) {
+            try {
+                await axios.put(`${API_MARKET}/api/admin/sellers/${id}/status`, { is_active: isActive }, { headers: getAuthHeader() });
+                showToast('Статус обновлён');
+                loadAdminSellers();
+            } catch (err) {
+                showToast('Ошибка', 'error');
+            }
+        }
+        
+        async function loadAdminProducts() {
+            const container = document.getElementById('admin-products-list');
+            try {
+                const res = await axios.get(`${API_MARKET}/api/products`);
+                const products = res.data?.data || res.data?.products || [];
+                container.innerHTML = products.length ? products.map(p => `
+                    <div class="admin-item">
+                        <div>
+                            <strong>${p.title}</strong>
+                            <p style="color: var(--gray-500);">${Number(p.price).toLocaleString()} ₽ | Статус: ${p.status || 'pending'}</p>
+                        </div>
+                        <div class="admin-item-actions">
+                            <button class="btn btn-success btn-small" onclick="updateProductStatus(${p.id}, 'active')">Активен</button>
+                            <button class="btn btn-danger btn-small" onclick="updateProductStatus(${p.id}, 'blocked')">Заблокировать</button>
+                        </div>
+                    </div>
+                `).join('') : '<div class="empty-state">Нет товаров</div>';
+            } catch (err) {
+                container.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
+            }
+        }
+        
+        async function updateProductStatus(id, status) {
+            try {
+                await axios.put(`${API_MARKET}/api/admin/products/${id}/status`, { status }, { headers: getAuthHeader() });
+                showToast('Статус обновлён');
+                loadAdminProducts();
+            } catch (err) {
+                showToast('Ошибка', 'error');
+            }
+        }
+        
+        async function loadAdminOrders() {
+            const container = document.getElementById('admin-orders-list');
+            try {
+                const res = await axios.get(`${API_MARKET}/api/admin/orders`, { headers: getAuthHeader() });
+                const orders = res.data || [];
+                container.innerHTML = orders.length ? orders.map(o => `
+                    <div class="admin-item">
+                        <div>
+                            <strong>Заказ #${o.id}</strong>
+                            <p style="color: var(--gray-500);">User: ${o.user_id} | ${Number(o.total_amount).toLocaleString()} ₽ | ${getStatusText(o.status)}</p>
+                        </div>
+                        <div class="admin-item-actions">
+                            <select onchange="updateOrderStatus(${o.id}, this.value)">
+                                <option value="">Изменить статус</option>
+                                <option value="confirmed">Подтвердить</option>
+                                <option value="shipped">Отправить</option>
+                                <option value="delivered">Доставлен</option>
+                                <option value="cancelled">Отменить</option>
+                            </select>
+                        </div>
+                    </div>
+                `).join('') : '<div class="empty-state">Нет заказов</div>';
+            } catch (err) {}
+        }
+        
+        async function updateOrderStatus(id, status) {
+            if (!status) return;
+            try {
+                await axios.put(`${API_MARKET}/api/admin/orders/${id}/status`, { status }, { headers: getAuthHeader() });
+                showToast('Статус заказа обновлён');
+                loadAdminOrders();
+            } catch (err) {
+                showToast('Ошибка', 'error');
+            }
+        }
+        
+        // Seller
+        async function loadSellerData() {
+            try {
+                const res = await axios.get(`${API_MARKET}/api/seller/profile`, { headers: getAuthHeader() });
+                document.getElementById('seller-register').style.display = 'none';
+                document.getElementById('seller-dashboard').style.display = 'block';
+                loadSellerProducts();
+            } catch (err) {
+                document.getElementById('seller-register').style.display = 'block';
+                document.getElementById('seller-dashboard').style.display = 'none';
+            }
+        }
+        
+        async function registerSeller(e) {
+            e.preventDefault();
+            const shopName = document.getElementById('shop-name').value;
+            const description = document.getElementById('shop-description').value;
+            
+            try {
+                await axios.post(`${API_MARKET}/api/seller/register`,
+                    { shop_name: shopName, description: description },
+                    { headers: getAuthHeader() }
+                );
+                showToast('Магазин зарегистрирован!');
+                loadSellerData();
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка', 'error');
+            }
+        }
+        
+        function toggleProductForm() {
+            const form = document.getElementById('add-product-form');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            renderCategories();
+        }
+        
+        async function loadSellerProducts() {
+            const container = document.getElementById('seller-products-list');
+            try {
+                const res = await axios.get(`${API_MARKET}/api/seller/products`, { headers: getAuthHeader() });
+                const products = res.data || [];
+                container.innerHTML = products.length ? products.map(p => `
+                    <div class="seller-product">
+                        <div>
+                            <strong>${p.title}</strong> - ${Number(p.price).toLocaleString()} ₽
+                            <span style="color: var(--gray-500);">(${p.stock} шт.)</span>
+                        </div>
+                        <button class="btn btn-danger btn-small" onclick="deleteProduct(${p.id})">Удалить</button>
+                    </div>
+                `).join('') : '<div class="empty-state">Нет товаров</div>';
+            } catch (err) {}
+        }
+
+        // Image upload
+        function previewImage(e) {
+            const file = e.target.files[0];
+            const preview = document.getElementById('image-preview');
+            if (file) {
+                preview.src = URL.createObjectURL(file);
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        async function uploadImage(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await axios.post(`${API_MARKET}/api/upload/image`, formData, {
+                    headers: {
+                        ...getAuthHeader(),
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                return res.data.url;
+            } catch (err) {
+                console.error('Upload error:', err);
+                return '';
+            }
+        }
+        
+        async function createProduct(e) {
+            e.preventDefault();
+            
+            // Upload image first if selected
+            const imageFile = document.getElementById('product-image').files[0];
+            let imageUrl = '';
+            if (imageFile) {
+                showToast('Загружаем изображение...');
+                imageUrl = await uploadImage(imageFile);
+            }
+            
+            const product = {
+                title: document.getElementById('product-name').value,
+                description: document.getElementById('product-description').value,
+                price: parseFloat(document.getElementById('product-price').value),
+                stock: parseInt(document.getElementById('product-stock').value),
+                category_id: parseInt(document.getElementById('product-category').value),
+                image_url: imageUrl
+            };
+            
+            try {
+                await axios.post(`${API_MARKET}/api/seller/products`, product, { headers: getAuthHeader() });
+                showToast('Товар создан!');
+                toggleProductForm();
+                // Clear form
+                document.getElementById('product-image').value = '';
+                document.getElementById('image-preview').style.display = 'none';
+                loadSellerProducts();
+                loadProducts();
+            } catch (err) {
+                showToast(err.response?.data?.error || 'Ошибка', 'error');
+            }
+        }
+        
+        async function deleteProduct(id) {
+            if (!confirm('Удалить товар?')) return;
+            try {
+                await axios.delete(`${API_MARKET}/api/seller/products/${id}`, { headers: getAuthHeader() });
+                showToast('Товар удалён');
+                loadSellerProducts();
+                loadProducts();
+            } catch (err) {
+                showToast('Ошибка', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

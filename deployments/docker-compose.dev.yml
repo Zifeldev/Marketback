@@ -4,18 +4,20 @@ services:
   auth-postgres:
     image: postgres:16-alpine
     container_name: auth-postgres-dev
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: auth_user
-      POSTGRES_PASSWORD: auth_password
-      POSTGRES_DB: auth_db
+      POSTGRES_USER: ${AUTH_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+      POSTGRES_DB: ${AUTH_DB_NAME}
     volumes:
       - auth_pgdata_dev:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "${AUTH_POSTGRES_PORT}:5432"
     networks:
       - marketback
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U auth_user"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,16 +28,18 @@ services:
     volumes:
       - auth_redis_dev:/data
     ports:
-      - "6380:6379"
+      - "${AUTH_REDIS_PORT}:6379"
     networks:
       - marketback
 
   auth-migrate:
     image: migrate/migrate:v4.15.2
     container_name: auth-migrate-dev
+    env_file:
+      - .env
     volumes:
       - ../db/auth_migrations:/migrations
-    command: ["-path=/migrations", "-database=postgres://auth_user:auth_password@auth-postgres:5432/auth_db?sslmode=disable", "up"]
+    command: ["-path=/migrations", "-database=postgres://${AUTH_DB_USER}:${AUTH_DB_PASSWORD}@auth-postgres:5432/${AUTH_DB_NAME}?sslmode=disable", "up"]
     depends_on:
       auth-postgres:
         condition: service_healthy
@@ -48,23 +52,20 @@ services:
       context: ../service/Auth
       dockerfile: Dockerfile
     container_name: auth-service-dev
+    env_file:
+      - .env
     environment:
       DB_HOST: auth-postgres
       DB_PORT: 5432
-      DB_USER: auth_user
-      DB_PASSWORD: auth_password
-      DB_NAME: auth_db
+      DB_USER: ${AUTH_DB_USER}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      DB_NAME: ${AUTH_DB_NAME}
       REDIS_ADDR: auth-redis:6379
-      JWT_ACCESS_SECRET: dev-super-secret-jwt-access-key-for-development-only
-      JWT_REFRESH_SECRET: dev-super-secret-jwt-refresh-key-for-development-only
-      JWT_ACCESS_EXPIRATION: 15m
-      JWT_REFRESH_EXPIRATION: 168h
-      JWT_ISSUER: marketback-auth
-      HTTP_HOST: :8081
+      HTTP_HOST: ":${AUTH_PORT}"
       LOG_LEVEL: debug
       ENV: development
     ports:
-      - "8081:8081"
+      - "${AUTH_EXTERNAL_PORT}:${AUTH_PORT}"
     depends_on:
       auth-postgres:
         condition: service_healthy
@@ -75,6 +76,12 @@ services:
     networks:
       - marketback
     restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${AUTH_PORT}/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   market-redis:
     image: redis:7-alpine
@@ -82,25 +89,27 @@ services:
     volumes:
       - market_redis_dev:/data
     ports:
-      - "6381:6379"
+      - "${MARKET_REDIS_PORT:-6381}:6379"
     networks:
       - marketback
 
   market-postgres:
     image: postgres:16-alpine
     container_name: market-postgres-dev
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: market_user
-      POSTGRES_PASSWORD: market_password
-      POSTGRES_DB: market_db
+      POSTGRES_USER: ${MARKET_DB_USER}
+      POSTGRES_PASSWORD: ${MARKET_DB_PASSWORD}
+      POSTGRES_DB: ${MARKET_DB_NAME}
     volumes:
       - market_pgdata_dev:/var/lib/postgresql/data
     ports:
-      - "5434:5432"
+      - "${MARKET_POSTGRES_PORT}:5432"
     networks:
       - marketback
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U market_user"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -108,9 +117,11 @@ services:
   market-migrate:
     image: migrate/migrate:v4.15.2
     container_name: market-migrate-dev
+    env_file:
+      - .env
     volumes:
       - ../db/market_migrations:/migrations
-    command: ["-path=/migrations", "-database=postgres://market_user:market_password@market-postgres:5432/market_db?sslmode=disable", "up"]
+    command: ["-path=/migrations", "-database=postgres://${MARKET_DB_USER}:${MARKET_DB_PASSWORD}@market-postgres:5432/${MARKET_DB_NAME}?sslmode=disable", "up"]
     depends_on:
       market-postgres:
         condition: service_healthy
@@ -123,19 +134,21 @@ services:
       context: ../service/Market
       dockerfile: Dockerfile
     container_name: market-service-dev
+    env_file:
+      - .env
     environment:
       DB_HOST: market-postgres
       DB_PORT: 5432
-      DB_USER: market_user
-      DB_PASSWORD: market_password
-      DB_NAME: market_db
-      JWT_ACCESS_SECRET: dev-super-secret-jwt-access-key-for-development-only
+      DB_USER: ${MARKET_DB_USER}
+      DB_PASSWORD: ${MARKET_DB_PASSWORD}
+      DB_NAME: ${MARKET_DB_NAME}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       REDIS_ADDR: market-redis:6379
-      HTTP_HOST: :8080
+      HTTP_HOST: ":${MARKET_PORT}"
       LOG_LEVEL: debug
       ENV: development
     ports:
-      - "8080:8080"
+      - "${MARKET_EXTERNAL_PORT}:${MARKET_PORT}"
     depends_on:
       market-postgres:
         condition: service_healthy
@@ -148,6 +161,12 @@ services:
     networks:
       - marketback
     restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${MARKET_PORT}/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 networks:
   marketback:

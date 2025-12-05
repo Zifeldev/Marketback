@@ -1,12 +1,12 @@
-name: emailback
+name: marketback
 
 networks:
   data: { driver: bridge }
 
 volumes:
-  pgdata:
   auth_pgdata:
   market_pgdata:
+  market_uploads:
 
 services:
   # ===== Auth Service =====
@@ -74,7 +74,7 @@ services:
       DB_USER: ${AUTH_DB_USER}
       DB_PASSWORD: ${AUTH_DB_PASSWORD}
       DB_NAME: ${AUTH_DB_NAME}
-      REDIS_ADDR: auth-redis:6379
+      REDIS_ADDR: ${AUTH_REDIS_ADDR}
       REDIS_PASSWORD: ${AUTH_REDIS_PASSWORD}
       REDIS_DB: ${AUTH_REDIS_DB}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT}
@@ -94,101 +94,6 @@ services:
     networks: [data]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
-      interval: 15s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-
-  # ===== Email Service =====
-  email-migrate:
-    image: migrate/migrate:4
-    depends_on:
-      email-postgres:
-        condition: service_healthy
-    networks: [data]
-    volumes:
-      - ../db/migrations:/migrations:ro
-    environment:
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
-    command:
-      - "-path"
-      - "/migrations"
-      - "-database"
-      - "postgres://${DB_USER}:${DB_PASSWORD}@email-postgres:5432/${DB_NAME}?sslmode=disable"
-      - "-verbose"
-      - "up"
-    restart: "no"
-
-  email-postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks: [data]
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-
-  email-redis:
-    image: redis:7-alpine
-    command: ["redis-server","--save","","--appendonly","no"]
-    networks: [data]
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-
-  email-service:
-    build:
-      context: ..
-      dockerfile: service/EmailParse/Dockerfile
-    image: emailback:local
-    env_file:
-      - .env
-    environment:
-      HTTP_PORT: "8080"
-      DB_HOST: email-postgres
-      DB_PORT: "5432"
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
-      REDIS_ADDR: email-redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      REDIS_DB: ${REDIS_DB}
-      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT}
-      AI_ENABLED: ${AI_ENABLED}
-      AI_TIMEOUT: ${AI_TIMEOUT}
-      AI_SUM_MODELS: ${AI_SUM_MODELS}
-      AI_CLS_MODEL: ${AI_CLS_MODEL}
-      HF_TOKEN: ${HF_TOKEN}
-      # Auth service URL for JWT validation
-      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8081}
-    depends_on:
-      email-migrate:
-        condition: service_completed_successfully
-      email-postgres:
-        condition: service_healthy
-      email-redis:
-        condition: service_healthy
-      auth-service:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    networks: [data]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -241,7 +146,7 @@ services:
     env_file:
       - .env
     environment:
-      HTTP_HOST: ":8083"
+      HTTP_HOST: ":${MARKET_PORT}"
       DB_HOST: market-postgres
       DB_PORT: "5432"
       DB_USER: ${MARKET_DB_USER}
@@ -251,6 +156,13 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: ${ENV:-development}
+      REDIS_ADDR: ${MARKET_REDIS_ADDR}
+      REDIS_PASSWORD: ${MARKET_REDIS_PASSWORD}
+      REDIS_DB: ${MARKET_REDIS_DB}
+      UPLOAD_DIR: /app/uploads
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+    volumes:
+      - market_uploads:/app/uploads
     depends_on:
       market-migrate:
         condition: service_completed_successfully
@@ -258,11 +170,13 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      auth-redis:
+        condition: service_healthy
     ports:
-      - "8083:8083"
+      - "${MARKET_EXTERNAL_PORT}:${MARKET_PORT}"
     networks: [data]
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${MARKET_PORT}/health || exit 1"]
       interval: 15s
       timeout: 3s
       retries: 5

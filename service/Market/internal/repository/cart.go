@@ -2,9 +2,9 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/Zifeldev/marketback/service/Market/internal/logger"
 	"github.com/Zifeldev/marketback/service/Market/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,17 +24,19 @@ func (r *CartRepository) AddItem(ctx context.Context, userID int, req *models.Ad
 		return nil, fmt.Errorf("failed to get or create cart: %w", err)
 	}
 
-	query := `
-		INSERT INTO cart_items (cart_id, product_id, quantity, size, color)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (cart_id, product_id, size, color) 
-		DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity, updated_at = NOW()
-		RETURNING id, cart_id, product_id, quantity, size, created_at, updated_at
-	`
+	query, args, err := psql.Insert("cart_items").
+		Columns("cart_id", "product_id", "quantity", "size", "color").
+		Values(cartID, req.ProductID, req.Quantity, req.Size, nil).
+		Suffix("ON CONFLICT (cart_id, product_id, size, color) DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity, updated_at = NOW()").
+		Suffix("RETURNING id, cart_id, product_id, quantity, COALESCE(size, '') as size, created_at, updated_at").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build add item query: %w", err)
+	}
 
 	var item models.CartItem
 	var returnedCartID int
-	err = r.db.QueryRow(ctx, query, cartID, req.ProductID, req.Quantity, req.Size, nil).Scan(
+	err = r.db.QueryRow(ctx, query, args...).Scan(
 		&item.ID,
 		&returnedCartID,
 		&item.ProductID,
@@ -54,13 +56,31 @@ func (r *CartRepository) AddItem(ctx context.Context, userID int, req *models.Ad
 }
 
 func (r *CartRepository) getOrCreateCartID(ctx context.Context, userID int) (int, error) {
+	selectQuery, selectArgs, err := psql.Select("id").
+		From("carts").
+		Where(sq.Eq{"user_id": userID}).
+		Limit(1).
+		ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("failed to build select cart query: %w", err)
+	}
+
 	var id int
-	err := r.db.QueryRow(ctx, `SELECT id FROM carts WHERE user_id = $1 LIMIT 1`, userID).Scan(&id)
+	err = r.db.QueryRow(ctx, selectQuery, selectArgs...).Scan(&id)
 	if err == nil {
 		return id, nil
 	}
 
-	err = r.db.QueryRow(ctx, `INSERT INTO carts (user_id, created_at, updated_at) VALUES ($1, NOW(), NOW()) RETURNING id`, userID).Scan(&id)
+	insertQuery, insertArgs, err := psql.Insert("carts").
+		Columns("user_id", "created_at", "updated_at").
+		Values(userID, sq.Expr("NOW()"), sq.Expr("NOW()")).
+		Suffix("RETURNING id").
+		ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("failed to build insert cart query: %w", err)
+	}
+
+	err = r.db.QueryRow(ctx, insertQuery, insertArgs...).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -68,20 +88,22 @@ func (r *CartRepository) getOrCreateCartID(ctx context.Context, userID int) (int
 }
 
 func (r *CartRepository) GetUserCart(ctx context.Context, userID int) ([]*models.CartItemWithDetails, error) {
-	query := `
-		SELECT 
-			ci.id, c.user_id, ci.product_id, ci.quantity, ci.size, ci.created_at, ci.updated_at,
-			p.title as product_title,
-			p.price as product_price,
-			p.image_url as product_image
-		FROM cart_items ci
-		JOIN carts c ON ci.cart_id = c.id
-		JOIN products p ON ci.product_id = p.id
-		WHERE c.user_id = $1
-		ORDER BY ci.created_at DESC
-	`
+	query, args, err := psql.Select(
+		"ci.id", "c.user_id", "ci.product_id", "ci.quantity", "COALESCE(ci.size, '') as size", "ci.created_at", "ci.updated_at",
+		"p.title as product_title",
+		"p.price::float8 as product_price",
+		"COALESCE(p.image_url, '') as product_image",
+	).From("cart_items ci").
+		Join("carts c ON ci.cart_id = c.id").
+		Join("products p ON ci.product_id = p.id").
+		Where(sq.Eq{"c.user_id": userID}).
+		OrderBy("ci.created_at DESC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build get cart query: %w", err)
+	}
 
-	rows, err := r.db.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		logger.GetLogger().WithField("err", err).Error("failed to get user cart")
 		return nil, fmt.Errorf("failed to get user cart: %w", err)
@@ -91,7 +113,6 @@ func (r *CartRepository) GetUserCart(ctx context.Context, userID int) ([]*models
 	var items []*models.CartItemWithDetails
 	for rows.Next() {
 		var item models.CartItemWithDetails
-		var productImage sql.NullString
 		if err := rows.Scan(
 			&item.ID,
 			&item.UserID,
@@ -102,12 +123,9 @@ func (r *CartRepository) GetUserCart(ctx context.Context, userID int) ([]*models
 			&item.UpdatedAt,
 			&item.ProductTitle,
 			&item.ProductPrice,
-			&productImage,
+			&item.ProductImage,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan cart item: %w", err)
-		}
-		if productImage.Valid {
-			item.ProductImage = productImage.String
 		}
 		items = append(items, &item)
 	}
@@ -116,16 +134,27 @@ func (r *CartRepository) GetUserCart(ctx context.Context, userID int) ([]*models
 }
 
 func (r *CartRepository) UpdateItem(ctx context.Context, itemID, userID int, req *models.UpdateCartItemRequest) (*models.CartItem, error) {
-	query := `
-		UPDATE cart_items
-		SET quantity = $1, size = COALESCE(NULLIF($2, ''), size), updated_at = NOW()
-		WHERE id = $3 AND cart_id = (SELECT id FROM carts WHERE user_id = $4)
-		RETURNING id, cart_id, product_id, quantity, size, created_at, updated_at
-	`
+	updateBuilder := psql.Update("cart_items").
+		Set("quantity", req.Quantity).
+		Set("updated_at", sq.Expr("NOW()")).
+		Where(sq.And{
+			sq.Eq{"id": itemID},
+			sq.Expr("cart_id = (SELECT id FROM carts WHERE user_id = ?)", userID),
+		}).
+		Suffix("RETURNING id, cart_id, product_id, quantity, COALESCE(size, '') as size, created_at, updated_at")
+
+	if req.Size != "" {
+		updateBuilder = updateBuilder.Set("size", req.Size)
+	}
+
+	query, args, err := updateBuilder.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build update cart item query: %w", err)
+	}
 
 	var item models.CartItem
 	var returnedCartID int
-	err := r.db.QueryRow(ctx, query, req.Quantity, req.Size, itemID, userID).Scan(
+	err = r.db.QueryRow(ctx, query, args...).Scan(
 		&item.ID,
 		&returnedCartID,
 		&item.ProductID,
@@ -145,9 +174,17 @@ func (r *CartRepository) UpdateItem(ctx context.Context, itemID, userID int, req
 }
 
 func (r *CartRepository) DeleteItem(ctx context.Context, itemID, userID int) error {
-	query := `DELETE FROM cart_items WHERE id = $1 AND cart_id = (SELECT id FROM carts WHERE user_id = $2)`
+	query, args, err := psql.Delete("cart_items").
+		Where(sq.And{
+			sq.Eq{"id": itemID},
+			sq.Expr("cart_id = (SELECT id FROM carts WHERE user_id = ?)", userID),
+		}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build delete cart item query: %w", err)
+	}
 
-	result, err := r.db.Exec(ctx, query, itemID, userID)
+	result, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
 		logger.GetLogger().WithField("err", err).Error("failed to delete cart item")
 		return fmt.Errorf("failed to delete cart item: %w", err)
@@ -161,9 +198,14 @@ func (r *CartRepository) DeleteItem(ctx context.Context, itemID, userID int) err
 }
 
 func (r *CartRepository) ClearCart(ctx context.Context, userID int) error {
-	query := `DELETE FROM cart_items WHERE cart_id = (SELECT id FROM carts WHERE user_id = $1)`
+	query, args, err := psql.Delete("cart_items").
+		Where(sq.Expr("cart_id = (SELECT id FROM carts WHERE user_id = ?)", userID)).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build clear cart query: %w", err)
+	}
 
-	_, err := r.db.Exec(ctx, query, userID)
+	_, err = r.db.Exec(ctx, query, args...)
 	if err != nil {
 		logger.GetLogger().WithField("err", err).Error("failed to clear cart")
 		return fmt.Errorf("failed to clear cart: %w", err)

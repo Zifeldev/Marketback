@@ -4,6 +4,8 @@ services:
   auth-postgres:
     image: postgres:16-alpine
     container_name: auth-postgres-prod
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${AUTH_DB_USER}
       POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
@@ -47,6 +49,8 @@ services:
   auth-migrate:
     image: migrate/migrate:v4.15.2
     container_name: auth-migrate-prod
+    env_file:
+      - .env
     volumes:
       - ../db/auth_migrations:/migrations
     command: ["-path=/migrations", "-database=postgres://${AUTH_DB_USER}:${AUTH_DB_PASSWORD}@auth-postgres:5432/${AUTH_DB_NAME}?sslmode=disable", "up"]
@@ -62,6 +66,8 @@ services:
       context: ../service/Auth
       dockerfile: Dockerfile
     container_name: auth-service-prod
+    env_file:
+      - .env
     environment:
       AUTH_DB_HOST: auth-postgres
       AUTH_DB_PORT: 5432
@@ -70,15 +76,11 @@ services:
       AUTH_DB_NAME: ${AUTH_DB_NAME}
       REDIS_ADDR: auth-redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
-      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
-      HTTP_HOST: :8081
+      HTTP_HOST: ":${AUTH_PORT}"
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
     ports:
-      - "8081:8081"
+      - "${AUTH_EXTERNAL_PORT}:${AUTH_PORT}"
     depends_on:
       auth-postgres:
         condition: service_healthy
@@ -95,7 +97,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:${AUTH_PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -104,6 +106,8 @@ services:
   market-postgres:
     image: postgres:16-alpine
     container_name: market-postgres-prod
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${MARKET_DB_USER}
       POSTGRES_PASSWORD: ${MARKET_DB_PASSWORD}
@@ -127,6 +131,8 @@ services:
   market-migrate:
     image: migrate/migrate:v4.15.2
     container_name: market-migrate-prod
+    env_file:
+      - .env
     volumes:
       - ../db/market_migrations:/migrations
     command: ["-path=/migrations", "-database=postgres://${MARKET_DB_USER}:${MARKET_DB_PASSWORD}@market-postgres:5432/${MARKET_DB_NAME}?sslmode=disable", "up"]
@@ -142,6 +148,8 @@ services:
       context: ../service/Market
       dockerfile: Dockerfile
     container_name: market-service-prod
+    env_file:
+      - .env
     environment:
       DB_HOST: market-postgres
       DB_PORT: 5432
@@ -149,11 +157,11 @@ services:
       DB_PASSWORD: ${MARKET_DB_PASSWORD}
       DB_NAME: ${MARKET_DB_NAME}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      HTTP_HOST: :8080
+      HTTP_HOST: ":${MARKET_PORT}"
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
     ports:
-      - "8080:8080"
+      - "${MARKET_EXTERNAL_PORT}:${MARKET_PORT}"
     depends_on:
       market-postgres:
         condition: service_healthy
@@ -170,7 +178,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:${MARKET_PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
