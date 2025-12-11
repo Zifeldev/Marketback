@@ -361,3 +361,134 @@ func TestLogout_Success_FromBody(t *testing.T) {
 
 	mockService.AssertExpectations(t)
 }
+
+// --- Role-based Registration Tests ---
+
+func TestRegister_WithSellerRole(t *testing.T) {
+	r, mockService, controller := setupTest()
+
+	r.POST("/auth/register", controller.Register)
+
+	mockTokens := &models.TokenPair{
+		AccessToken:  "seller_access_token",
+		RefreshToken: "seller_refresh_token",
+		ExpiresIn:    900,
+	}
+
+	// Expect registration with seller role
+	mockService.On("Register", mock.Anything, "seller@example.com", "password123", "seller").
+		Return(mockTokens, nil)
+
+	reqBody := map[string]string{
+		"email":    "seller@example.com",
+		"password": "password123",
+		"role":     "seller",
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "seller_access_token", response["access_token"])
+
+	mockService.AssertExpectations(t)
+}
+
+func TestRegister_WithAdminRole(t *testing.T) {
+	r, mockService, controller := setupTest()
+
+	r.POST("/auth/register", controller.Register)
+
+	mockTokens := &models.TokenPair{
+		AccessToken:  "admin_access_token",
+		RefreshToken: "admin_refresh_token",
+		ExpiresIn:    900,
+	}
+
+	mockService.On("Register", mock.Anything, "admin@example.com", "password123", "admin").
+		Return(mockTokens, nil)
+
+	reqBody := map[string]string{
+		"email":    "admin@example.com",
+		"password": "password123",
+		"role":     "admin",
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	mockService.AssertExpectations(t)
+}
+
+func TestRegister_WithInvalidRole(t *testing.T) {
+	r, _, controller := setupTest()
+
+	r.POST("/auth/register", controller.Register)
+
+	reqBody := map[string]string{
+		"email":    "test@example.com",
+		"password": "password123",
+		"role":     "superadmin", // invalid role
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var response map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "invalid role", response["error"])
+}
+
+func TestRegister_WithEmptyRole_DefaultsToUser(t *testing.T) {
+	r, mockService, controller := setupTest()
+
+	r.POST("/auth/register", controller.Register)
+
+	mockTokens := &models.TokenPair{
+		AccessToken:  "user_access_token",
+		RefreshToken: "user_refresh_token",
+		ExpiresIn:    900,
+	}
+
+	// When role is empty, service receives empty string and defaults internally
+	mockService.On("Register", mock.Anything, "user@example.com", "password123", "").
+		Return(mockTokens, nil)
+
+	reqBody := map[string]string{
+		"email":    "user@example.com",
+		"password": "password123",
+		// no role specified
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	mockService.AssertExpectations(t)
+}

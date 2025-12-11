@@ -101,5 +101,7 @@ func TestMarketController_AddToCart_InternalError(t *testing.T) {
 	mc.AddToCart(c)
 
 	require.Equal(t, 500, recorder.Code)
-	require.Contains(t, recorder.Body.String(), "db error")
+	// AppError возвращает унифицированное сообщение, не раскрывая внутренние ошибки клиенту
+	require.Contains(t, recorder.Body.String(), "INTERNAL_ERROR")
+	require.Contains(t, recorder.Body.String(), "failed to add item to cart")
 }

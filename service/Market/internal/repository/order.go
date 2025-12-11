@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/Zifeldev/marketback/service/Market/internal/logger"
@@ -26,6 +27,49 @@ func (r *OrderRepository) Create(ctx context.Context, userID int, req *models.Cr
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	for _, item := range items {
+		var currentStock int
+		lockQuery := `SELECT stock FROM products WHERE id = $1 FOR UPDATE`
+		err := tx.QueryRow(ctx, lockQuery, item.ProductID).Scan(&currentStock)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				logger.GetLogger().WithField("product_id", item.ProductID).Error("product not found")
+				return nil, fmt.Errorf("product %d not found", item.ProductID)
+			}
+			logger.GetLogger().WithField("err", err).Error("failed to lock product for stock check")
+			return nil, fmt.Errorf("failed to lock product for stock check: %w", err)
+		}
+
+		if currentStock < item.Quantity {
+			logger.GetLogger().WithFields(map[string]interface{}{
+				"product_id": item.ProductID,
+				"requested":  item.Quantity,
+				"available":  currentStock,
+			}).Error("insufficient stock for product")
+			return nil, fmt.Errorf("insufficient stock for product %d: requested %d, available %d",
+				item.ProductID, item.Quantity, currentStock)
+		}
+	}
+
+	for _, item := range items {
+		updateStockQuery := `UPDATE products SET stock = stock - $1, updated_at = NOW() 
+			WHERE id = $2 AND stock >= $1`
+
+		result, err := tx.Exec(ctx, updateStockQuery, item.Quantity, item.ProductID)
+		if err != nil {
+			logger.GetLogger().WithField("err", err).Error("failed to update product stock")
+			return nil, fmt.Errorf("failed to update product stock: %w", err)
+		}
+
+		if result.RowsAffected() != 1 {
+			logger.GetLogger().WithFields(map[string]interface{}{
+				"product_id":    item.ProductID,
+				"affected_rows": result.RowsAffected(),
+			}).Error("stock update affected unexpected number of rows")
+			return nil, fmt.Errorf("failed to deduct stock for product %d: concurrent modification detected", item.ProductID)
+		}
+	}
 
 	var totalAmount float64
 	for _, item := range items {
@@ -87,30 +131,7 @@ func (r *OrderRepository) Create(ctx context.Context, userID int, req *models.Cr
 		}
 
 		orderItems = append(orderItems, orderItem)
-
-		updateStockQuery, updateStockArgs, err := psql.Update("products").
-			Set("stock", sq.Expr("stock - ?", cartItem.Quantity)).
-			Where(sq.And{
-				sq.Eq{"id": cartItem.ProductID},
-				sq.GtOrEq{"stock": cartItem.Quantity},
-			}).
-			ToSql()
-		if err != nil {
-			logger.GetLogger().WithField("err", err).Error("failed to build stock update query")
-			return nil, fmt.Errorf("failed to build stock update query: %w", err)
-		}
-
-		result, err := tx.Exec(ctx, updateStockQuery, updateStockArgs...)
-		if err != nil {
-			logger.GetLogger().WithField("err", err).Error("failed to update product stock")
-			return nil, fmt.Errorf("failed to update product stock: %w", err)
-		}
-		if result.RowsAffected() == 0 {
-			logger.GetLogger().WithField("product_id", cartItem.ProductID).Error("insufficient stock for product")
-			return nil, fmt.Errorf("insufficient stock for product %d", cartItem.ProductID)
-		}
 	}
-
 	clearCartQuery, clearCartArgs, err := psql.Delete("carts").
 		Where(sq.Eq{"user_id": userID}).
 		ToSql()
@@ -206,29 +227,67 @@ func (r *OrderRepository) GetByID(ctx context.Context, orderID int) (*models.Ord
 	}, nil
 }
 
-func (r *OrderRepository) GetUserOrders(ctx context.Context, userID int) ([]*models.Order, error) {
-	query, args, err := psql.Select(
-		"id", "user_id", "total_amount::float8", "COALESCE(status, 'pending') as status", "COALESCE(payment_method, '') as payment_method",
-		"COALESCE(payment_status, 'pending') as payment_status", "delivery_address", "created_at", "updated_at",
-	).From("orders").
+func (r *OrderRepository) GetUserOrders(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+	countQuery, countArgs, err := psql.Select("COUNT(*)").
+		From("orders").
 		Where(sq.Eq{"user_id": userID}).
-		OrderBy("created_at DESC").
 		ToSql()
+
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to build user orders select query")
-		return nil, fmt.Errorf("failed to build user orders select query: %w", err)
+		logger.GetLogger().WithField("err", err).Error("failed to build count query")
+		return nil, 0, fmt.Errorf("failed to build count query: %w", err)
+	}
+
+	var totalItems int64
+	if err := r.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalItems); err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to count orders")
+		return nil, 0, fmt.Errorf("failed to count orders: %w", err)
+	}
+
+	if totalItems == 0 {
+		return []*models.OrderWithItems{}, 0, nil
+	}
+
+	query, args, err := psql.Select(
+		"o.id", "o.user_id", "o.total_amount::float8",
+		"COALESCE(o.status, 'pending') as status",
+		"COALESCE(o.payment_method, '') as payment_method",
+		"COALESCE(o.payment_status, 'pending') as payment_status",
+		"o.delivery_address", "o.created_at", "o.updated_at",
+		"oi.id as item_id", "oi.product_id", "oi.quantity",
+		"COALESCE(oi.size, '') as size", "oi.price::float8", "oi.created_at as item_created_at",
+		"COALESCE(p.title, '') as product_title",
+	).From("orders o").
+		LeftJoin("order_items oi ON o.id = oi.order_id").
+		LeftJoin("products p ON oi.product_id = p.id").
+		Where(sq.Eq{"o.user_id": userID}).
+		OrderBy("o.created_at DESC", "oi.id").
+		Limit(uint64(pagination.GetLimit())).
+		Offset(uint64(pagination.GetOffset())).
+		ToSql()
+
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build user orders query")
+		return nil, 0, fmt.Errorf("failed to build user orders query: %w", err)
 	}
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		logger.GetLogger().WithField("err", err).Error("failed to get user orders")
-		return nil, fmt.Errorf("failed to get user orders: %w", err)
+		return nil, 0, fmt.Errorf("failed to get user orders: %w", err)
 	}
 	defer rows.Close()
 
-	var orders []*models.Order
+	ordersMap := make(map[int]*models.OrderWithItems)
+	var orderIDs []int
+
 	for rows.Next() {
 		var order models.Order
+		var itemID, productID, quantity *int
+		var size, productTitle *string
+		var itemPrice *float64
+		var itemCreatedAt *time.Time
+
 		if err := rows.Scan(
 			&order.ID,
 			&order.UserID,
@@ -239,38 +298,117 @@ func (r *OrderRepository) GetUserOrders(ctx context.Context, userID int) ([]*mod
 			&order.DeliveryAddr,
 			&order.CreatedAt,
 			&order.UpdatedAt,
+			&itemID,
+			&productID,
+			&quantity,
+			&size,
+			&itemPrice,
+			&itemCreatedAt,
+			&productTitle,
 		); err != nil {
-			logger.GetLogger().WithField("err", err).Error("failed to scan order")
-			return nil, fmt.Errorf("failed to scan order: %w", err)
+			logger.GetLogger().WithField("err", err).Error("failed to scan order row")
+			return nil, 0, fmt.Errorf("failed to scan order row: %w", err)
 		}
-		orders = append(orders, &order)
+
+		if _, exists := ordersMap[order.ID]; !exists {
+			ordersMap[order.ID] = &models.OrderWithItems{
+				Order: order,
+				Items: []models.OrderItem{},
+			}
+			orderIDs = append(orderIDs, order.ID)
+		}
+
+		if itemID != nil {
+			item := models.OrderItem{
+				ID:        *itemID,
+				OrderID:   order.ID,
+				ProductID: *productID,
+				Quantity:  *quantity,
+				Price:     *itemPrice,
+				CreatedAt: *itemCreatedAt,
+			}
+			if size != nil {
+				item.Size = *size
+			}
+			ordersMap[order.ID].Items = append(ordersMap[order.ID].Items, item)
+		}
 	}
 
-	return orders, nil
+	result := make([]*models.OrderWithItems, 0, len(orderIDs))
+	for _, id := range orderIDs {
+		result = append(result, ordersMap[id])
+	}
+
+	return result, totalItems, nil
 }
 
-func (r *OrderRepository) GetAll(ctx context.Context) ([]*models.Order, error) {
-	query, args, err := psql.Select(
-		"id", "user_id", "total_amount::float8", "COALESCE(status, 'pending') as status", "COALESCE(payment_method, '') as payment_method",
-		"COALESCE(payment_status, 'pending') as payment_status", "delivery_address", "created_at", "updated_at",
-	).From("orders").
-		OrderBy("created_at DESC").
-		ToSql()
+func (r *OrderRepository) GetAll(ctx context.Context, pagination *models.PaginationParams, status string) ([]*models.OrderWithItems, int64, error) {
+	countBuilder := psql.Select("COUNT(*)").From("orders")
+	if status != "" {
+		countBuilder = countBuilder.Where(sq.Eq{"status": status})
+	}
+
+	countQuery, countArgs, err := countBuilder.ToSql()
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to build all orders select query")
-		return nil, fmt.Errorf("failed to build all orders select query: %w", err)
+		logger.GetLogger().WithField("err", err).Error("failed to build count query")
+		return nil, 0, fmt.Errorf("failed to build count query: %w", err)
+	}
+
+	var totalItems int64
+	if err := r.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalItems); err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to count orders")
+		return nil, 0, fmt.Errorf("failed to count orders: %w", err)
+	}
+
+	if totalItems == 0 {
+		return []*models.OrderWithItems{}, 0, nil
+	}
+
+	queryBuilder := psql.Select(
+		"o.id", "o.user_id", "o.total_amount::float8",
+		"COALESCE(o.status, 'pending') as status",
+		"COALESCE(o.payment_method, '') as payment_method",
+		"COALESCE(o.payment_status, 'pending') as payment_status",
+		"o.delivery_address", "o.created_at", "o.updated_at",
+		"oi.id as item_id", "oi.product_id", "oi.quantity",
+		"COALESCE(oi.size, '') as size", "oi.price::float8", "oi.created_at as item_created_at",
+		"COALESCE(p.title, '') as product_title",
+	).From("orders o").
+		LeftJoin("order_items oi ON o.id = oi.order_id").
+		LeftJoin("products p ON oi.product_id = p.id")
+
+	if status != "" {
+		queryBuilder = queryBuilder.Where(sq.Eq{"o.status": status})
+	}
+
+	query, args, err := queryBuilder.
+		OrderBy("o.created_at DESC", "oi.id").
+		Limit(uint64(pagination.GetLimit())).
+		Offset(uint64(pagination.GetOffset())).
+		ToSql()
+
+	if err != nil {
+		logger.GetLogger().WithField("err", err).Error("failed to build all orders query")
+		return nil, 0, fmt.Errorf("failed to build all orders query: %w", err)
 	}
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		logger.GetLogger().WithField("err", err).Error("failed to get all orders")
-		return nil, fmt.Errorf("failed to get all orders: %w", err)
+		return nil, 0, fmt.Errorf("failed to get all orders: %w", err)
 	}
 	defer rows.Close()
 
-	var orders []*models.Order
+	ordersMap := make(map[int]*models.OrderWithItems)
+	var orderIDs []int
+
 	for rows.Next() {
 		var order models.Order
+		var itemID, productID, quantity *int
+		var size, productTitle *string
+		var itemPrice *float64
+		var itemCreatedAt *time.Time
+
 		if err := rows.Scan(
 			&order.ID,
 			&order.UserID,
@@ -281,13 +419,48 @@ func (r *OrderRepository) GetAll(ctx context.Context) ([]*models.Order, error) {
 			&order.DeliveryAddr,
 			&order.CreatedAt,
 			&order.UpdatedAt,
+			&itemID,
+			&productID,
+			&quantity,
+			&size,
+			&itemPrice,
+			&itemCreatedAt,
+			&productTitle,
 		); err != nil {
-			logger.GetLogger().WithField("err", err).Error("failed to scan order")
+			logger.GetLogger().WithField("err", err).Error("failed to scan order row")
+			return nil, 0, fmt.Errorf("failed to scan order row: %w", err)
 		}
-		orders = append(orders, &order)
+
+		if _, exists := ordersMap[order.ID]; !exists {
+			ordersMap[order.ID] = &models.OrderWithItems{
+				Order: order,
+				Items: []models.OrderItem{},
+			}
+			orderIDs = append(orderIDs, order.ID)
+		}
+
+		if itemID != nil {
+			item := models.OrderItem{
+				ID:        *itemID,
+				OrderID:   order.ID,
+				ProductID: *productID,
+				Quantity:  *quantity,
+				Price:     *itemPrice,
+				CreatedAt: *itemCreatedAt,
+			}
+			if size != nil {
+				item.Size = *size
+			}
+			ordersMap[order.ID].Items = append(ordersMap[order.ID].Items, item)
+		}
 	}
 
-	return orders, nil
+	result := make([]*models.OrderWithItems, 0, len(orderIDs))
+	for _, id := range orderIDs {
+		result = append(result, ordersMap[id])
+	}
+
+	return result, totalItems, nil
 }
 
 func (r *OrderRepository) UpdateStatus(ctx context.Context, orderID int, status string) (*models.Order, error) {

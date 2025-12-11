@@ -6,7 +6,6 @@ import (
 	"net/http"
 )
 
-// Error codes
 const (
 	CodeNotFound          = "NOT_FOUND"
 	CodeBadRequest        = "BAD_REQUEST"
@@ -17,9 +16,10 @@ const (
 	CodeValidationError   = "VALIDATION_ERROR"
 	CodeInsufficientStock = "INSUFFICIENT_STOCK"
 	CodeEmptyCart         = "EMPTY_CART"
+	CodeRateLimitExceeded = "RATE_LIMIT_EXCEEDED"
+	CodeTimeout           = "TIMEOUT"
 )
 
-// AppError represents a typed application error
 type AppError struct {
 	Code       string `json:"code"`
 	Message    string `json:"message"`
@@ -38,7 +38,6 @@ func (e *AppError) Unwrap() error {
 	return e.Err
 }
 
-// New creates a new AppError
 func New(code, message string, httpStatus int) *AppError {
 	return &AppError{
 		Code:       code,
@@ -47,7 +46,6 @@ func New(code, message string, httpStatus int) *AppError {
 	}
 }
 
-// Wrap wraps an existing error with AppError
 func Wrap(err error, code, message string, httpStatus int) *AppError {
 	return &AppError{
 		Code:       code,
@@ -66,9 +64,58 @@ var (
 	ErrInternalError     = New(CodeInternalError, "internal server error", http.StatusInternalServerError)
 	ErrInsufficientStock = New(CodeInsufficientStock, "insufficient stock", http.StatusConflict)
 	ErrEmptyCart         = New(CodeEmptyCart, "cart is empty", http.StatusBadRequest)
+	ErrRateLimitExceeded = New(CodeRateLimitExceeded, "rate limit exceeded", http.StatusTooManyRequests)
+	ErrTimeout           = New(CodeTimeout, "request timeout", http.StatusGatewayTimeout)
 )
 
-// Entity-specific not found errors
+func BadRequest(message string) *AppError {
+	return &AppError{
+		Code:       CodeBadRequest,
+		Message:    message,
+		HTTPStatus: http.StatusBadRequest,
+	}
+}
+
+func Unauthorized(message string) *AppError {
+	return &AppError{
+		Code:       CodeUnauthorized,
+		Message:    message,
+		HTTPStatus: http.StatusUnauthorized,
+	}
+}
+
+func Forbidden(message string) *AppError {
+	return &AppError{
+		Code:       CodeForbidden,
+		Message:    message,
+		HTTPStatus: http.StatusForbidden,
+	}
+}
+
+func Internal(message string) *AppError {
+	return &AppError{
+		Code:       CodeInternalError,
+		Message:    message,
+		HTTPStatus: http.StatusInternalServerError,
+	}
+}
+
+func NotFound(message string) *AppError {
+	return &AppError{
+		Code:       CodeNotFound,
+		Message:    message,
+		HTTPStatus: http.StatusNotFound,
+	}
+}
+
+func InvalidID(entity string) *AppError {
+	return &AppError{
+		Code:       CodeBadRequest,
+		Message:    fmt.Sprintf("invalid %s ID", entity),
+		HTTPStatus: http.StatusBadRequest,
+	}
+}
+
 func ProductNotFound(id int) *AppError {
 	return &AppError{
 		Code:       CodeNotFound,
@@ -109,7 +156,6 @@ func CartItemNotFound(id int) *AppError {
 	}
 }
 
-// ValidationError creates validation error
 func ValidationError(field, message string) *AppError {
 	return &AppError{
 		Code:       CodeValidationError,
@@ -118,7 +164,6 @@ func ValidationError(field, message string) *AppError {
 	}
 }
 
-// Conflict creates conflict error
 func Conflict(message string) *AppError {
 	return &AppError{
 		Code:       CodeConflict,
@@ -127,7 +172,6 @@ func Conflict(message string) *AppError {
 	}
 }
 
-// InsufficientStockForProduct creates an error for a specific product
 func InsufficientStockForProduct(productID int) *AppError {
 	return &AppError{
 		Code:       CodeInsufficientStock,
@@ -136,13 +180,11 @@ func InsufficientStockForProduct(productID int) *AppError {
 	}
 }
 
-// IsAppError checks if an error is an AppError
 func IsAppError(err error) bool {
 	var appErr *AppError
 	return errors.As(err, &appErr)
 }
 
-// GetAppError extracts AppError from error chain
 func GetAppError(err error) *AppError {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
@@ -151,7 +193,6 @@ func GetAppError(err error) *AppError {
 	return nil
 }
 
-// GetHTTPStatus returns HTTP status code for an error
 func GetHTTPStatus(err error) int {
 	if appErr := GetAppError(err); appErr != nil {
 		return appErr.HTTPStatus

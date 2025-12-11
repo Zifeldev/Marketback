@@ -25,6 +25,6 @@ type CategoryRepo interface {
 }
 
 type OrderRepo interface {
-	GetUserOrders(ctx context.Context, userID int) ([]*models.Order, error)
+	GetUserOrders(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error)
 	GetByID(ctx context.Context, orderID int) (*models.OrderWithItems, error)
 }

@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -162,3 +163,121 @@ func noopClear(ctx context.Context, userID int) error          { return nil }
 
 // Prevent unused warnings when converting string id to int for negative test paths
 func _atoi(s string) int { i, _ := strconv.Atoi(s); return i }
+
+// --- AddToCart Unit Tests ---
+
+func TestMarketController_AddToCart_Unit_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+
+	body := `{"product_id":5,"quantity":2,"size":"M"}`
+	c.Request = httptest.NewRequest("POST", "/api/cart/items", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", 42)
+
+	now := time.Now()
+	mrepo := &mockCartRepoFull{
+		addFn: func(ctx context.Context, userID int, req *models.AddToCartRequest) (*models.CartItem, error) {
+			require.Equal(t, 42, userID)
+			require.Equal(t, 5, req.ProductID)
+			require.Equal(t, 2, req.Quantity)
+			require.Equal(t, "M", req.Size)
+			return &models.CartItem{
+				ID:        1,
+				UserID:    userID,
+				ProductID: req.ProductID,
+				Quantity:  req.Quantity,
+				Size:      req.Size,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}, nil
+		},
+		getFn:    noopGet,
+		updateFn: noopUpdate,
+		deleteFn: noopDelete,
+		clearFn:  noopClear,
+	}
+
+	mc := NewMarketController(nil, nil, mrepo, nil, nil)
+	mc.AddToCart(c)
+
+	require.Equal(t, 201, r.Code)
+	require.Contains(t, r.Body.String(), `"product_id":5`)
+	require.Contains(t, r.Body.String(), `"quantity":2`)
+}
+
+func TestMarketController_AddToCart_Unit_InvalidBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+
+	body := `{"product_id":"not_a_number"}` // invalid
+	c.Request = httptest.NewRequest("POST", "/api/cart/items", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", 42)
+
+	mrepo := &mockCartRepoFull{
+		addFn:    noopAdd,
+		getFn:    noopGet,
+		updateFn: noopUpdate,
+		deleteFn: noopDelete,
+		clearFn:  noopClear,
+	}
+
+	mc := NewMarketController(nil, nil, mrepo, nil, nil)
+	mc.AddToCart(c)
+
+	require.Equal(t, 400, r.Code)
+}
+
+func TestMarketController_AddToCart_Unit_ZeroQuantity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+
+	body := `{"product_id":5,"quantity":0}` // zero quantity
+	c.Request = httptest.NewRequest("POST", "/api/cart/items", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", 42)
+
+	mrepo := &mockCartRepoFull{
+		addFn:    noopAdd,
+		getFn:    noopGet,
+		updateFn: noopUpdate,
+		deleteFn: noopDelete,
+		clearFn:  noopClear,
+	}
+
+	mc := NewMarketController(nil, nil, mrepo, nil, nil)
+	mc.AddToCart(c)
+
+	// Should fail validation for zero quantity
+	require.True(t, r.Code >= 400)
+}
+
+func TestMarketController_AddToCart_Unit_RepoError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+
+	body := `{"product_id":5,"quantity":1}`
+	c.Request = httptest.NewRequest("POST", "/api/cart/items", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", 42)
+
+	mrepo := &mockCartRepoFull{
+		addFn: func(ctx context.Context, userID int, req *models.AddToCartRequest) (*models.CartItem, error) {
+			return nil, errors.New("database error")
+		},
+		getFn:    noopGet,
+		updateFn: noopUpdate,
+		deleteFn: noopDelete,
+		clearFn:  noopClear,
+	}
+
+	mc := NewMarketController(nil, nil, mrepo, nil, nil)
+	mc.AddToCart(c)
+
+	require.Equal(t, 500, r.Code)
+}

@@ -46,12 +46,12 @@ var _ repository.CategoryRepo = (*mockCategoryRepo)(nil)
 
 // mockOrderRepo minimal for controller construction
 type mockOrderRepo struct {
-	getUserFn func(ctx context.Context, userID int) ([]*models.Order, error)
+	getUserFn func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error)
 	getByIDFn func(ctx context.Context, orderID int) (*models.OrderWithItems, error)
 }
 
-func (m *mockOrderRepo) GetUserOrders(ctx context.Context, userID int) ([]*models.Order, error) {
-	return m.getUserFn(ctx, userID)
+func (m *mockOrderRepo) GetUserOrders(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+	return m.getUserFn(ctx, userID, pagination)
 }
 func (m *mockOrderRepo) GetByID(ctx context.Context, orderID int) (*models.OrderWithItems, error) {
 	return m.getByIDFn(ctx, orderID)
@@ -81,7 +81,12 @@ func TestMarketController_GetProducts_PaginationAndFilters(t *testing.T) {
 		return []*models.ProductWithDetails{prod}, 11, nil // totalItems=11
 	}}
 	mCat := &mockCategoryRepo{getAllFn: func(ctx context.Context) ([]*models.Category, error) { return nil, nil }, getByIDFn: func(ctx context.Context, id int) (*models.Category, error) { return nil, nil }}
-	mOrder := &mockOrderRepo{getUserFn: func(ctx context.Context, userID int) ([]*models.Order, error) { return nil, nil }, getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil }}
+	mOrder := &mockOrderRepo{
+		getUserFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+			return nil, 0, nil
+		},
+		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil },
+	}
 
 	mc := NewMarketController(mProd, mCat, nil, mOrder, nil)
 	mc.GetProducts(c)
@@ -121,7 +126,12 @@ func TestMarketController_GetProducts_DefaultPagination(t *testing.T) {
 		return []*models.ProductWithDetails{}, 0, nil
 	}}
 	mCat := &mockCategoryRepo{getAllFn: func(ctx context.Context) ([]*models.Category, error) { return nil, nil }, getByIDFn: func(ctx context.Context, id int) (*models.Category, error) { return nil, nil }}
-	mOrder := &mockOrderRepo{getUserFn: func(ctx context.Context, userID int) ([]*models.Order, error) { return nil, nil }, getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil }}
+	mOrder := &mockOrderRepo{
+		getUserFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+			return nil, 0, nil
+		},
+		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil },
+	}
 	mc := NewMarketController(mProd, mCat, nil, mOrder, nil)
 	mc.GetProducts(c)
 	require.Equal(t, 200, r.Code)

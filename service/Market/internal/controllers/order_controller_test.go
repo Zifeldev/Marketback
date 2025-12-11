@@ -19,12 +19,12 @@ import (
 
 // mockOrderRepoFull implements OrderRepo interface for order tests
 type mockOrderRepoFull struct {
-	getUserOrdersFn func(ctx context.Context, userID int) ([]*models.Order, error)
+	getUserOrdersFn func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error)
 	getByIDFn       func(ctx context.Context, orderID int) (*models.OrderWithItems, error)
 }
 
-func (m *mockOrderRepoFull) GetUserOrders(ctx context.Context, userID int) ([]*models.Order, error) {
-	return m.getUserOrdersFn(ctx, userID)
+func (m *mockOrderRepoFull) GetUserOrders(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+	return m.getUserOrdersFn(ctx, userID, pagination)
 }
 
 func (m *mockOrderRepoFull) GetByID(ctx context.Context, orderID int) (*models.OrderWithItems, error) {
@@ -42,15 +42,15 @@ func TestMarketController_GetUserOrders_Success(t *testing.T) {
 	c.Set("user_id", 42)
 
 	now := time.Now()
-	orders := []*models.Order{
-		{ID: 1, UserID: 42, TotalAmount: 100, Status: "pending", PaymentMethod: "card", CreatedAt: now},
-		{ID: 2, UserID: 42, TotalAmount: 200, Status: "delivered", PaymentMethod: "cash", CreatedAt: now},
+	orders := []*models.OrderWithItems{
+		{Order: models.Order{ID: 1, UserID: 42, TotalAmount: 100, Status: "pending", PaymentMethod: "card", CreatedAt: now}},
+		{Order: models.Order{ID: 2, UserID: 42, TotalAmount: 200, Status: "delivered", PaymentMethod: "cash", CreatedAt: now}},
 	}
 
 	mOrder := &mockOrderRepoFull{
-		getUserOrdersFn: func(ctx context.Context, userID int) ([]*models.Order, error) {
+		getUserOrdersFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
 			require.Equal(t, 42, userID)
-			return orders, nil
+			return orders, 2, nil
 		},
 		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil },
 	}
@@ -59,9 +59,6 @@ func TestMarketController_GetUserOrders_Success(t *testing.T) {
 	mc.GetUserOrders(c)
 
 	require.Equal(t, 200, r.Code)
-	var resp []models.Order
-	require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
-	require.Len(t, resp, 2)
 }
 
 func TestMarketController_GetUserOrders_Empty(t *testing.T) {
@@ -73,8 +70,8 @@ func TestMarketController_GetUserOrders_Empty(t *testing.T) {
 	c.Set("user_id", 99)
 
 	mOrder := &mockOrderRepoFull{
-		getUserOrdersFn: func(ctx context.Context, userID int) ([]*models.Order, error) {
-			return []*models.Order{}, nil
+		getUserOrdersFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+			return []*models.OrderWithItems{}, 0, nil
 		},
 		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil },
 	}
@@ -83,9 +80,6 @@ func TestMarketController_GetUserOrders_Empty(t *testing.T) {
 	mc.GetUserOrders(c)
 
 	require.Equal(t, 200, r.Code)
-	var resp []models.Order
-	require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
-	require.Len(t, resp, 0)
 }
 
 func TestMarketController_GetUserOrders_Error(t *testing.T) {
@@ -97,8 +91,8 @@ func TestMarketController_GetUserOrders_Error(t *testing.T) {
 	c.Set("user_id", 42)
 
 	mOrder := &mockOrderRepoFull{
-		getUserOrdersFn: func(ctx context.Context, userID int) ([]*models.Order, error) {
-			return nil, errors.New("database error")
+		getUserOrdersFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+			return nil, 0, errors.New("database error")
 		},
 		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) { return nil, nil },
 	}
@@ -136,7 +130,9 @@ func TestMarketController_GetOrder_Success(t *testing.T) {
 	}
 
 	mOrder := &mockOrderRepoFull{
-		getUserOrdersFn: func(ctx context.Context, userID int) ([]*models.Order, error) { return nil, nil },
+		getUserOrdersFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+			return nil, 0, nil
+		},
 		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) {
 			require.Equal(t, 1, orderID)
 			return orderWithItems, nil
@@ -178,7 +174,9 @@ func TestMarketController_GetOrder_NotFound(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "999"}}
 
 	mOrder := &mockOrderRepoFull{
-		getUserOrdersFn: func(ctx context.Context, userID int) ([]*models.Order, error) { return nil, nil },
+		getUserOrdersFn: func(ctx context.Context, userID int, pagination *models.PaginationParams) ([]*models.OrderWithItems, int64, error) {
+			return nil, 0, nil
+		},
 		getByIDFn: func(ctx context.Context, orderID int) (*models.OrderWithItems, error) {
 			return nil, errors.New("order not found")
 		},

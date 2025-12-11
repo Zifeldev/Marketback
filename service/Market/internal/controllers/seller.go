@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Zifeldev/marketback/service/Market/internal/logger"
+	"github.com/Zifeldev/marketback/service/Market/internal/apperrors"
 	"github.com/Zifeldev/marketback/service/Market/internal/models"
 	"github.com/Zifeldev/marketback/service/Market/internal/repository"
 	"github.com/gin-gonic/gin"
@@ -41,15 +41,12 @@ func (sc *SellerController) RegisterSeller(c *gin.Context) {
 
 	var req models.CreateSellerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("RegisterSeller: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	seller, err := sc.sellerRepo.Create(c.Request.Context(), userID.(int), &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("RegisterSeller: failed to create seller")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to create seller")) {
 		return
 	}
 
@@ -71,9 +68,7 @@ func (sc *SellerController) GetSellerProfile(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	seller, err := sc.sellerRepo.GetByUserID(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("user_id", userID).Error("GetSellerProfile: seller profile not found")
-		c.JSON(http.StatusNotFound, gin.H{"error": "seller profile not found"})
+	if handleError(c, err, apperrors.NotFound("seller profile not found")) {
 		return
 	}
 
@@ -98,23 +93,18 @@ func (sc *SellerController) UpdateSellerProfile(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	seller, err := sc.sellerRepo.GetByUserID(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("user_id", userID).Error("UpdateSellerProfile: seller profile not found")
-		c.JSON(http.StatusNotFound, gin.H{"error": "seller profile not found"})
+	if handleError(c, err, apperrors.NotFound("seller profile not found")) {
 		return
 	}
 
 	var req models.UpdateSellerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateSellerProfile: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	updatedSeller, err := sc.sellerRepo.Update(c.Request.Context(), seller.ID, &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateSellerProfile: failed to update seller")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to update seller")) {
 		return
 	}
 
@@ -139,23 +129,18 @@ func (sc *SellerController) CreateProduct(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	seller, err := sc.sellerRepo.GetByUserID(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("user_id", userID).Error("CreateProduct: seller profile not found")
-		c.JSON(http.StatusForbidden, gin.H{"error": "seller profile not found"})
+	if handleError(c, err, apperrors.Forbidden("seller profile not found")) {
 		return
 	}
 
 	var req models.CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("CreateProduct: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	product, err := sc.productRepo.Create(c.Request.Context(), seller.ID, &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("CreateProduct: failed to create product")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to create product")) {
 		return
 	}
 
@@ -178,16 +163,12 @@ func (sc *SellerController) GetSellerProducts(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	seller, err := sc.sellerRepo.GetByUserID(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("user_id", userID).Error("GetSellerProducts: seller profile not found")
-		c.JSON(http.StatusForbidden, gin.H{"error": "seller profile not found"})
+	if handleError(c, err, apperrors.Forbidden("seller profile not found")) {
 		return
 	}
 
 	products, err := sc.productRepo.GetBySellerID(c.Request.Context(), seller.ID)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("GetSellerProducts: failed to get products")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to get products")) {
 		return
 	}
 
@@ -213,36 +194,29 @@ func (sc *SellerController) UpdateProduct(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	productID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateProduct: invalid product ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product ID"})
+		respondError(c, apperrors.InvalidID("product"))
 		return
 	}
 
 	seller, err := sc.sellerRepo.GetByUserID(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("user_id", userID).Error("UpdateProduct: seller profile not found")
-		c.JSON(http.StatusForbidden, gin.H{"error": "seller profile not found"})
+	if handleError(c, err, apperrors.Forbidden("seller profile not found")) {
 		return
 	}
 
 	product, err := sc.productRepo.GetByID(c.Request.Context(), productID)
 	if err != nil || product.SellerID != seller.ID {
-		logger.GetLogger().WithField("product_id", productID).Error("UpdateProduct: product not found or access denied")
-		c.JSON(http.StatusForbidden, gin.H{"error": "product not found or access denied"})
+		respondError(c, apperrors.Forbidden("product not found or access denied"))
 		return
 	}
 
 	var req models.UpdateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateProduct: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	updatedProduct, err := sc.productRepo.Update(c.Request.Context(), productID, &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateProduct: failed to update product")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to update product")) {
 		return
 	}
 
@@ -267,28 +241,23 @@ func (sc *SellerController) DeleteProduct(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	productID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("DeleteProduct: invalid product ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product ID"})
+		respondError(c, apperrors.InvalidID("product"))
 		return
 	}
 
 	seller, err := sc.sellerRepo.GetByUserID(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("user_id", userID).Error("DeleteProduct: seller profile not found")
-		c.JSON(http.StatusForbidden, gin.H{"error": "seller profile not found"})
+	if handleError(c, err, apperrors.Forbidden("seller profile not found")) {
 		return
 	}
 
 	product, err := sc.productRepo.GetByID(c.Request.Context(), productID)
 	if err != nil || product.SellerID != seller.ID {
-		logger.GetLogger().WithField("product_id", productID).Error("DeleteProduct: product not found or access denied")
-		c.JSON(http.StatusForbidden, gin.H{"error": "product not found or access denied"})
+		respondError(c, apperrors.Forbidden("product not found or access denied"))
 		return
 	}
 
 	if err := sc.productRepo.Delete(c.Request.Context(), productID); err != nil {
-		logger.GetLogger().WithField("err", err).Error("DeleteProduct: failed to delete product")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		handleError(c, err, apperrors.Internal("failed to delete product"))
 		return
 	}
 

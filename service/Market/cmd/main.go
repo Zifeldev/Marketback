@@ -105,9 +105,6 @@ func main() {
 		uploadDir = "./uploads"
 	}
 	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "http://localhost:8080"
-	}
 
 	// Initialize controllers
 	marketController := controllers.NewMarketController(
@@ -128,7 +125,10 @@ func main() {
 		orderRepo,
 	)
 	healthController := controllers.NewHealthController(pool, redisClient, startTime, Version)
-	uploadController := controllers.NewUploadController(uploadDir, baseURL)
+	uploadController, err := controllers.NewUploadController(uploadDir, baseURL)
+	if err != nil {
+		log.Fatalf("Failed to create upload controller: %v", err)
+	}
 
 	// Setup Gin router
 	if cfg.Strict {

@@ -101,7 +101,7 @@ func Load(ctx context.Context) (*Config, error) {
 		Host:              getEnv("DB_HOST", "localhost"),
 		Port:              port,
 		User:              getEnv("DB_USER", "market_user"),
-		Password:          getEnv("DB_PASSWORD", "market_password"),
+		Password:          getEnv("DB_PASSWORD", ""),
 		Name:              getEnv("DB_NAME", "market_db"),
 		SSLMode:           getEnv("DB_SSLMODE", "disable"),
 		MaxConns:          int32(maxConns),
@@ -176,7 +176,7 @@ func Load(ctx context.Context) (*Config, error) {
 
 	// Upload settings
 	cfg.UploadDir = getEnv("UPLOAD_DIR", "./uploads")
-	cfg.BaseURL = getEnv("BASE_URL", "http://localhost:8080")
+	cfg.BaseURL = getEnv("BASE_URL", "")
 
 	return cfg, nil
 }

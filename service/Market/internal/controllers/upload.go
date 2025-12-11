@@ -13,19 +13,31 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	MaxFileSize = 5 * 1024 * 1024 // 5MB
+)
+
+var allowedImageExtensions = map[string]bool{
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
+	".gif":  true,
+	".webp": true,
+}
+
 type UploadController struct {
 	uploadDir string
 	baseURL   string
 }
 
-func NewUploadController(uploadDir, baseURL string) *UploadController {
+func NewUploadController(uploadDir, baseURL string) (*UploadController, error) {
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		panic(fmt.Sprintf("failed to create upload directory: %v", err))
+		return nil, fmt.Errorf("failed to create upload directory: %w", err)
 	}
 	return &UploadController{
 		uploadDir: uploadDir,
 		baseURL:   baseURL,
-	}
+	}, nil
 }
 
 // UploadImage godoc
@@ -48,20 +60,13 @@ func (uc *UploadController) UploadImage(c *gin.Context) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	allowedExts := map[string]bool{
-		".jpg":  true,
-		".jpeg": true,
-		".png":  true,
-		".gif":  true,
-		".webp": true,
-	}
-	if !allowedExts[ext] {
+	if !allowedImageExtensions[ext] {
 		logger.GetLogger().WithField("ext", ext).Warn("invalid file type")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file type. Allowed: jpg, jpeg, png, gif, webp"})
 		return
 	}
 
-	if file.Size > 5*1024*1024 {
+	if file.Size > MaxFileSize {
 		logger.GetLogger().WithField("size", file.Size).Warn("file too large")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "file too large. Max size: 5MB"})
 		return

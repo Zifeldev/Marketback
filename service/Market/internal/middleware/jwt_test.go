@@ -115,3 +115,140 @@ func TestJWTAuth_SetsContextFromMapClaimsFloat(t *testing.T) {
 		t.Fatalf("unexpected user_id %v", uid)
 	}
 }
+
+// Test RequireRole allows correct role
+func TestRequireRole_Allowed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/", nil)
+
+	c.Set("role", "seller")
+
+	h := RequireRole("seller", "admin")
+
+	h(c)
+
+	if c.IsAborted() {
+		t.Fatalf("expected request to not be aborted for valid role")
+	}
+}
+
+// Test RequireRole blocks wrong role with 403
+func TestRequireRole_Forbidden(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/", nil)
+
+	c.Set("role", "user") // user trying to access seller endpoint
+
+	h := RequireRole("seller", "admin")
+	h(c)
+
+	if !c.IsAborted() {
+		t.Fatalf("expected request to be aborted for wrong role")
+	}
+	if recorder.Code != 403 {
+		t.Fatalf("expected 403 status, got %d", recorder.Code)
+	}
+}
+
+// Test RequireRole blocks missing role with 403
+func TestRequireRole_MissingRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/", nil)
+
+	// no role set in context
+
+	h := RequireRole("admin")
+	h(c)
+
+	if !c.IsAborted() {
+		t.Fatalf("expected request to be aborted when role missing")
+	}
+	if recorder.Code != 403 {
+		t.Fatalf("expected 403 status, got %d", recorder.Code)
+	}
+}
+
+// Test JWTAuth rejects missing token
+func TestJWTAuth_MissingToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/", nil)
+
+	h := JWTAuth(testSecret)
+	h(c)
+
+	if !c.IsAborted() {
+		t.Fatalf("expected request to be aborted without token")
+	}
+	if recorder.Code != 401 {
+		t.Fatalf("expected 401 status, got %d", recorder.Code)
+	}
+}
+
+// Test JWTAuth rejects expired token
+func TestJWTAuth_ExpiredToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	// token expired 1 hour ago
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		UserID: 42,
+		Role:   "user",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Hour)),
+		},
+	})
+	signed, _ := tok.SignedString([]byte(testSecret))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	c.Request = req
+
+	h := JWTAuth(testSecret)
+	h(c)
+
+	if !c.IsAborted() {
+		t.Fatalf("expected request to be aborted for expired token")
+	}
+	if recorder.Code != 401 {
+		t.Fatalf("expected 401 status, got %d", recorder.Code)
+	}
+}
+
+// Test JWTAuth rejects invalid signature
+func TestJWTAuth_InvalidSignature(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		UserID: 42,
+		Role:   "user",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	})
+	signed, _ := tok.SignedString([]byte("wrong-secret"))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	c.Request = req
+
+	h := JWTAuth(testSecret)
+	h(c)
+
+	if !c.IsAborted() {
+		t.Fatalf("expected request to be aborted for invalid signature")
+	}
+	if recorder.Code != 401 {
+		t.Fatalf("expected 401 status, got %d", recorder.Code)
+	}
+}

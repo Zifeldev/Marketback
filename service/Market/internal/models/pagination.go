@@ -1,5 +1,9 @@
 package models
 
+const (
+	DefaultPageSize = 20
+	MaxPageSize     = 100
+)
 
 type PaginationParams struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
@@ -27,10 +31,10 @@ func (p *PaginationParams) GetOffset() int {
 
 func (p *PaginationParams) GetLimit() int {
 	if p.PageSize < 1 {
-		return 20 // default page size
+		return DefaultPageSize
 	}
-	if p.PageSize > 100 {
-		return 100 // max page size
+	if p.PageSize > MaxPageSize {
+		return MaxPageSize
 	}
 	return p.PageSize
 }

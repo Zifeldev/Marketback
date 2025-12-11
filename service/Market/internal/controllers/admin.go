@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Zifeldev/marketback/service/Market/internal/logger"
+	"github.com/Zifeldev/marketback/service/Market/internal/apperrors"
 	"github.com/Zifeldev/marketback/service/Market/internal/models"
 	"github.com/Zifeldev/marketback/service/Market/internal/repository"
 	"github.com/gin-gonic/gin"
@@ -48,15 +48,12 @@ func NewAdminController(
 func (ac *AdminController) CreateCategory(c *gin.Context) {
 	var req models.CreateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("CreateCategory: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	category, err := ac.categoryRepo.Create(c.Request.Context(), &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("CreateCategory: failed to create category")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to create category")) {
 		return
 	}
 
@@ -81,22 +78,18 @@ func (ac *AdminController) CreateCategory(c *gin.Context) {
 func (ac *AdminController) UpdateCategory(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateCategory: invalid category ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category ID"})
+		respondError(c, apperrors.InvalidID("category"))
 		return
 	}
 
 	var req models.UpdateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateCategory: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	category, err := ac.categoryRepo.Update(c.Request.Context(), id, &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateCategory: failed to update category")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to update category")) {
 		return
 	}
 
@@ -120,14 +113,12 @@ func (ac *AdminController) UpdateCategory(c *gin.Context) {
 func (ac *AdminController) DeleteCategory(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("DeleteCategory: invalid category ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category ID"})
+		respondError(c, apperrors.InvalidID("category"))
 		return
 	}
 
 	if err := ac.categoryRepo.Delete(c.Request.Context(), id); err != nil {
-		logger.GetLogger().WithField("err", err).Error("DeleteCategory: failed to delete category")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		handleError(c, err, apperrors.Internal("failed to delete category"))
 		return
 	}
 
@@ -152,8 +143,7 @@ func (ac *AdminController) DeleteCategory(c *gin.Context) {
 func (ac *AdminController) UpdateProductStatus(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateProductStatus: invalid product ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product ID"})
+		respondError(c, apperrors.InvalidID("product"))
 		return
 	}
 
@@ -161,8 +151,7 @@ func (ac *AdminController) UpdateProductStatus(c *gin.Context) {
 		Status string `json:"status" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateProductStatus: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
@@ -171,9 +160,7 @@ func (ac *AdminController) UpdateProductStatus(c *gin.Context) {
 	}
 
 	product, err := ac.productRepo.Update(c.Request.Context(), id, updateReq)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateProductStatus: failed to update product status")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to update product status")) {
 		return
 	}
 
@@ -194,9 +181,7 @@ func (ac *AdminController) UpdateProductStatus(c *gin.Context) {
 // @Router /api/admin/sellers [get]
 func (ac *AdminController) GetAllSellers(c *gin.Context) {
 	sellers, err := ac.sellerRepo.GetAll(c.Request.Context())
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("GetAllSellers: failed to get sellers")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to get sellers")) {
 		return
 	}
 
@@ -221,8 +206,7 @@ func (ac *AdminController) GetAllSellers(c *gin.Context) {
 func (ac *AdminController) UpdateSellerStatus(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateSellerStatus: invalid seller ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid seller ID"})
+		respondError(c, apperrors.InvalidID("seller"))
 		return
 	}
 
@@ -230,14 +214,12 @@ func (ac *AdminController) UpdateSellerStatus(c *gin.Context) {
 		IsActive bool `json:"is_active"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateSellerStatus: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	if err := ac.sellerRepo.UpdateStatus(c.Request.Context(), id, req.IsActive); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateSellerStatus: failed to update seller status")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		handleError(c, err, apperrors.Internal("failed to update seller status"))
 		return
 	}
 
@@ -246,25 +228,41 @@ func (ac *AdminController) UpdateSellerStatus(c *gin.Context) {
 
 // GetAllOrders godoc
 // @Summary Get all orders
-// @Description Get list of all orders (admin only)
+// @Description Get list of all orders with pagination (admin only)
 // @Tags admin
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {array} models.Order
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Param status query string false "Filter by status"
+// @Success 200 {object} models.PaginatedResponse
 // @Failure 401 {object} map[string]string
 // @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/orders [get]
 func (ac *AdminController) GetAllOrders(c *gin.Context) {
-	orders, err := ac.orderRepo.GetAll(c.Request.Context())
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("GetAllOrders: failed to get orders")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	var pagination models.PaginationParams
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		pagination = models.PaginationParams{Page: 1, PageSize: models.DefaultPageSize}
+	}
+	if pagination.Page < 1 {
+		pagination.Page = 1
+	}
+
+	status := c.Query("status")
+
+	orders, totalItems, err := ac.orderRepo.GetAll(c.Request.Context(), &pagination, status)
+	if handleError(c, err, apperrors.Internal("failed to get orders")) {
 		return
 	}
 
-	c.JSON(http.StatusOK, orders)
+	response := models.PaginatedResponse{
+		Data:       orders,
+		Pagination: models.NewPaginationMeta(pagination.Page, pagination.GetLimit(), totalItems),
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateOrderStatus godoc
@@ -285,22 +283,18 @@ func (ac *AdminController) GetAllOrders(c *gin.Context) {
 func (ac *AdminController) UpdateOrderStatus(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateOrderStatus: invalid order ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order ID"})
+		respondError(c, apperrors.InvalidID("order"))
 		return
 	}
 
 	var req models.UpdateOrderStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateOrderStatus: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	order, err := ac.orderRepo.UpdateStatus(c.Request.Context(), id, req.Status)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("UpdateOrderStatus: failed to update order status")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to update order status")) {
 		return
 	}
 

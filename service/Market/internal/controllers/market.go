@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Zifeldev/marketback/service/Market/internal/logger"
+	"github.com/Zifeldev/marketback/service/Market/internal/apperrors"
 	"github.com/Zifeldev/marketback/service/Market/internal/metrics"
 	"github.com/Zifeldev/marketback/service/Market/internal/models"
 	"github.com/Zifeldev/marketback/service/Market/internal/repository"
@@ -69,15 +69,12 @@ func (mc *MarketController) GetProducts(c *gin.Context) {
 
 	var pagination models.PaginationParams
 	if err := c.ShouldBindQuery(&pagination); err != nil {
-		logger.GetLogger().WithField("err", err).Warn("invalid pagination parameters")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pagination parameters"})
+		respondError(c, apperrors.BadRequest("invalid pagination parameters"))
 		return
 	}
 
 	products, totalItems, err := mc.productRepo.GetAll(c.Request.Context(), categoryID, sellerID, status, &pagination)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to get products")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to get products")) {
 		return
 	}
 
@@ -103,15 +100,12 @@ func (mc *MarketController) GetProducts(c *gin.Context) {
 func (mc *MarketController) GetProduct(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Warn("invalid product ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product ID"})
+		respondError(c, apperrors.InvalidID("product"))
 		return
 	}
 
 	product, err := mc.productRepo.GetByID(c.Request.Context(), id)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Warn("product not found")
-		c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
+	if handleError(c, err, apperrors.ProductNotFound(id)) {
 		return
 	}
 
@@ -131,9 +125,7 @@ func (mc *MarketController) GetProduct(c *gin.Context) {
 // @Router /api/categories [get]
 func (mc *MarketController) GetCategories(c *gin.Context) {
 	categories, err := mc.categoryRepo.GetAll(c.Request.Context())
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to get categories")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to get categories")) {
 		return
 	}
 
@@ -154,15 +146,12 @@ func (mc *MarketController) GetCategories(c *gin.Context) {
 func (mc *MarketController) GetCategory(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Warn("invalid category ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category ID"})
+		respondError(c, apperrors.InvalidID("category"))
 		return
 	}
 
 	category, err := mc.categoryRepo.GetByID(c.Request.Context(), id)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Warn("category not found")
-		c.JSON(http.StatusNotFound, gin.H{"error": "category not found"})
+	if handleError(c, err, apperrors.CategoryNotFound(id)) {
 		return
 	}
 
@@ -184,9 +173,7 @@ func (mc *MarketController) GetCart(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	cartItems, err := mc.cartRepo.GetUserCart(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to get cart")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to get cart")) {
 		return
 	}
 
@@ -211,15 +198,12 @@ func (mc *MarketController) AddToCart(c *gin.Context) {
 
 	var req models.AddToCartRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Warn("invalid add to cart request")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	item, err := mc.cartRepo.AddItem(c.Request.Context(), userID.(int), &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to add item to cart")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to add item to cart")) {
 		return
 	}
 
@@ -246,22 +230,18 @@ func (mc *MarketController) UpdateCartItem(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	itemID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Warn("invalid item ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		respondError(c, apperrors.InvalidID("cart item"))
 		return
 	}
 
 	var req models.UpdateCartItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Warn("invalid update cart request")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	item, err := mc.cartRepo.UpdateItem(c.Request.Context(), itemID, userID.(int), &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("failed to update cart item")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to update cart item")) {
 		return
 	}
 
@@ -285,14 +265,12 @@ func (mc *MarketController) DeleteCartItem(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	itemID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("DeleteCartItem: invalid item ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		respondError(c, apperrors.InvalidID("cart item"))
 		return
 	}
 
 	if err := mc.cartRepo.DeleteItem(c.Request.Context(), itemID, userID.(int)); err != nil {
-		logger.GetLogger().WithField("err", err).Error("DeleteCartItem: failed to delete item")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		handleError(c, err, apperrors.Internal("failed to delete cart item"))
 		return
 	}
 
@@ -317,15 +295,12 @@ func (mc *MarketController) CreateOrder(c *gin.Context) {
 
 	var req models.CreateOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.GetLogger().WithField("err", err).Error("CreateOrder: invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, apperrors.BadRequest(err.Error()))
 		return
 	}
 
 	order, err := mc.marketService.CreateOrder(c.Request.Context(), userID.(int), &req)
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("CreateOrder: failed to create order")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if handleError(c, err, apperrors.Internal("failed to create order")) {
 		return
 	}
 
@@ -336,26 +311,39 @@ func (mc *MarketController) CreateOrder(c *gin.Context) {
 
 // GetUserOrders godoc
 // @Summary Get user orders
-// @Description Get all orders for current user
+// @Description Get all orders for current user with pagination
 // @Tags orders
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {array} models.Order
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Success 200 {object} models.PaginatedResponse
 // @Failure 401 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/user/orders [get]
 func (mc *MarketController) GetUserOrders(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	orders, err := mc.orderRepo.GetUserOrders(c.Request.Context(), userID.(int))
-	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("GetUserOrders: failed to get orders")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	var pagination models.PaginationParams
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		pagination = models.PaginationParams{Page: 1, PageSize: models.DefaultPageSize}
+	}
+	if pagination.Page < 1 {
+		pagination.Page = 1
+	}
+
+	orders, totalItems, err := mc.orderRepo.GetUserOrders(c.Request.Context(), userID.(int), &pagination)
+	if handleError(c, err, apperrors.Internal("failed to get orders")) {
 		return
 	}
 
-	c.JSON(http.StatusOK, orders)
+	response := models.PaginatedResponse{
+		Data:       orders,
+		Pagination: models.NewPaginationMeta(pagination.Page, pagination.GetLimit(), totalItems),
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // GetOrder godoc
@@ -374,15 +362,12 @@ func (mc *MarketController) GetUserOrders(c *gin.Context) {
 func (mc *MarketController) GetOrder(c *gin.Context) {
 	orderID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logger.GetLogger().WithField("err", err).Error("GetOrder: invalid order ID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order ID"})
+		respondError(c, apperrors.InvalidID("order"))
 		return
 	}
 
 	order, err := mc.orderRepo.GetByID(c.Request.Context(), orderID)
-	if err != nil {
-		logger.GetLogger().WithField("order_id", orderID).Error("GetOrder: order not found")
-		c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+	if handleError(c, err, apperrors.OrderNotFound(orderID)) {
 		return
 	}
 
