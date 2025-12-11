@@ -190,6 +190,4 @@ marketbackf/
 
 ---
 
-## License
-MIT
 
